@@ -1,0 +1,2829 @@
+<roblox version="4">
+  <Item class="Lighting" referent="0">
+    <Properties>
+      <string name="Name">Lighting</string>
+      <token name="Technology">4</token>
+    </Properties>
+  </Item>
+  <Item class="ReplicatedStorage" referent="1">
+    <Properties>
+      <string name="Name">ReplicatedStorage</string>
+    </Properties>
+    <Item class="Folder" referent="2">
+      <Properties>
+        <string name="Name">Shared</string>
+      </Properties>
+      <Item class="ModuleScript" referent="3">
+        <Properties>
+          <string name="Name">Config</string>
+          <string name="Source"><![CDATA[--[[
+	Config
+	Shared numbers for the town layout. Server and client both read this.
+]]
+
+local Config = {}
+
+-- Town layout ---------------------------------------------------------------
+Config.MaxPlots = 8 -- one plot per player; set the place's Max Players to match
+Config.PlotRingRadius = 150 -- distance from the town centre to each plot centre
+Config.PlotSize = 64 -- plots are square
+Config.HouseOffset = 6 -- houses sit this far behind the plot centre (front yard)
+Config.PlazaRadius = 46
+
+Config.ForestInnerRadius = 230
+Config.ForestOuterRadius = 420
+Config.TreeCount = 180
+Config.WorldHalfSize = 520 -- invisible walls stop players walking off the map
+
+-- Gameplay ------------------------------------------------------------------
+Config.DefaultStyle = "EnchantedCottage"
+Config.StyleChangeCooldown = 3 -- seconds between rebuilds per player
+Config.TeleportCooldown = 1
+
+-- Saving --------------------------------------------------------------------
+Config.DataStoreName = "PotionTown_PlayerData_v1"
+
+-- Potion glass colours used for bottle decorations (and later, real potions)
+Config.PotionColors = {
+	Color3.fromRGB(60, 220, 120), -- emerald
+	Color3.fromRGB(170, 90, 255), -- violet
+	Color3.fromRGB(230, 50, 80), -- ruby
+	Color3.fromRGB(255, 170, 40), -- amber
+	Color3.fromRGB(60, 200, 255), -- aqua
+	Color3.fromRGB(255, 110, 200), -- pink
+	Color3.fromRGB(255, 215, 80), -- gold
+}
+
+-- Plot i sits on a ring around the plaza, facing the town centre.
+-- Its LookVector (-Z) points at the plaza, so "front" is -Z in plot space.
+function Config.GetPlotCFrame(index: number): CFrame
+	local angle = (index - 1) / Config.MaxPlots * math.pi * 2
+	local position = Vector3.new(math.cos(angle), 0, math.sin(angle)) * Config.PlotRingRadius
+	return CFrame.lookAt(position, Vector3.zero)
+end
+
+Config.TownSpawn = CFrame.lookAt(Vector3.new(0, 4, -32), Vector3.new(0, 4, 0))
+
+return Config
+]]></string>
+        </Properties>
+      </Item>
+      <Item class="ModuleScript" referent="4">
+        <Properties>
+          <string name="Name">HouseStyles</string>
+          <string name="Source"><![CDATA[--[[
+	HouseStyles
+	The 10 shop "vibes" a player can pick. HouseBuilder turns one of these
+	tables into a building, and the client UI uses Emoji/Tagline/colours for
+	the picker cards.
+
+	Roof.Type is one of: "Gable", "Flat", "Dome", "Cone", "Pagoda"
+	Features are optional decorations, see HouseBuilder for what each does.
+]]
+
+local M = Enum.Material
+local rgb = Color3.fromRGB
+
+local HouseStyles = {}
+
+HouseStyles.List = {
+	{
+		Id = "EnchantedCottage",
+		DisplayName = "Enchanted Cottage",
+		Emoji = "🧙",
+		Tagline = "Candlelit wood, crooked shingles and a smoking chimney.",
+		Width = 32, Depth = 26, WallHeight = 13,
+		Wall = { Color = rgb(120, 82, 56), Material = M.WoodPlanks },
+		Trim = { Color = rgb(66, 42, 30), Material = M.Wood },
+		Roof = { Type = "Gable", Color = rgb(64, 56, 86), Material = M.RoofShingles, Height = 12 },
+		Floor = { Color = rgb(92, 62, 44), Material = M.WoodPlanks },
+		Window = { Color = rgb(255, 190, 110), Material = M.Neon },
+		Door = { Color = rgb(80, 50, 35), Material = M.Wood },
+		Accent = rgb(130, 90, 200),
+		Light = rgb(255, 180, 110),
+		Features = { Chimney = true, Lanterns = true },
+	},
+	{
+		Id = "FuturisticLab",
+		DisplayName = "Futuristic Lab",
+		Emoji = "🚀",
+		Tagline = "Glowing neon strips and a chrome dome. Science!",
+		Width = 34, Depth = 28, WallHeight = 14,
+		Wall = { Color = rgb(225, 230, 238), Material = M.SmoothPlastic },
+		Trim = { Color = rgb(0, 220, 255), Material = M.Neon },
+		Roof = { Type = "Dome", Color = rgb(190, 200, 215), Material = M.Metal, Height = 10 },
+		Floor = { Color = rgb(40, 45, 60), Material = M.DiamondPlate },
+		Window = { Color = rgb(120, 230, 255), Material = M.Neon },
+		Door = { Color = rgb(90, 95, 110), Material = M.Metal },
+		Accent = rgb(0, 220, 255),
+		Light = rgb(180, 235, 255),
+		Features = { NeonStrips = true, Antenna = true },
+	},
+	{
+		Id = "CoquetteBoutique",
+		DisplayName = "Coquette Boutique",
+		Emoji = "🎀",
+		Tagline = "Pastel pink, striped awning and bows on everything.",
+		Width = 30, Depth = 26, WallHeight = 13,
+		Wall = { Color = rgb(255, 205, 220), Material = M.Plaster },
+		Trim = { Color = rgb(255, 255, 255), Material = M.SmoothPlastic },
+		Roof = { Type = "Gable", Color = rgb(240, 150, 180), Material = M.ClayRoofTiles, Height = 10 },
+		Floor = { Color = rgb(245, 225, 230), Material = M.CeramicTiles },
+		Window = { Color = rgb(255, 215, 235), Material = M.Neon },
+		Door = { Color = rgb(255, 165, 195), Material = M.SmoothPlastic },
+		Accent = rgb(230, 90, 140),
+		Light = rgb(255, 205, 225),
+		Features = { Bows = true, Awning = { rgb(255, 165, 195), rgb(255, 255, 255) }, FlowerBoxes = true },
+	},
+	{
+		Id = "RusticFarmhouse",
+		DisplayName = "Rustic Farmhouse",
+		Emoji = "🌾",
+		Tagline = "White boards, barn-red trim, picket fence and hay bales.",
+		Width = 34, Depth = 26, WallHeight = 13,
+		Wall = { Color = rgb(235, 228, 212), Material = M.WoodPlanks },
+		Trim = { Color = rgb(150, 42, 36), Material = M.Wood },
+		Roof = { Type = "Gable", Color = rgb(105, 110, 115), Material = M.CorrodedMetal, Height = 11 },
+		Floor = { Color = rgb(150, 110, 70), Material = M.WoodPlanks },
+		Window = { Color = rgb(255, 215, 150), Material = M.Neon },
+		Door = { Color = rgb(150, 45, 40), Material = M.Wood },
+		Accent = rgb(150, 42, 36),
+		Light = rgb(255, 205, 140),
+		Features = { Fence = true, HayBales = true, Chimney = true },
+	},
+	{
+		Id = "WoodenLodge",
+		DisplayName = "Wooden Lodge",
+		Emoji = "🌲",
+		Tagline = "Chunky log corners, steep roof and a stone chimney.",
+		Width = 34, Depth = 28, WallHeight = 14,
+		Wall = { Color = rgb(125, 85, 52), Material = M.Wood },
+		Trim = { Color = rgb(85, 55, 32), Material = M.Wood },
+		Roof = { Type = "Gable", Color = rgb(70, 58, 48), Material = M.WoodPlanks, Height = 15 },
+		Floor = { Color = rgb(110, 75, 45), Material = M.WoodPlanks },
+		Window = { Color = rgb(255, 180, 95), Material = M.Neon },
+		Door = { Color = rgb(90, 58, 35), Material = M.Wood },
+		Accent = rgb(60, 110, 70),
+		Light = rgb(255, 175, 95),
+		Features = { LogCorners = true, Chimney = true, Lanterns = true },
+	},
+	{
+		Id = "GothicCastle",
+		DisplayName = "Gothic Castle",
+		Emoji = "🏰",
+		Tagline = "Stone towers, battlements and spooky purple windows.",
+		Width = 34, Depth = 28, WallHeight = 16,
+		Wall = { Color = rgb(95, 92, 100), Material = M.Cobblestone },
+		Trim = { Color = rgb(60, 58, 66), Material = M.Slate },
+		Roof = { Type = "Flat", Color = rgb(55, 52, 60), Material = M.Slate },
+		Floor = { Color = rgb(70, 66, 72), Material = M.Slate },
+		Window = { Color = rgb(170, 90, 255), Material = M.Neon },
+		Door = { Color = rgb(60, 35, 45), Material = M.Wood },
+		Accent = rgb(110, 60, 160),
+		Light = rgb(200, 150, 255),
+		Features = { CornerTowers = rgb(70, 45, 105), Crenellations = true, Lanterns = true },
+	},
+	{
+		Id = "MushroomHouse",
+		DisplayName = "Mushroom Hideaway",
+		Emoji = "🍄",
+		Tagline = "A fairy home under a giant spotted mushroom cap.",
+		Width = 26, Depth = 26, WallHeight = 12,
+		Wall = { Color = rgb(245, 235, 210), Material = M.Plaster },
+		Trim = { Color = rgb(150, 105, 70), Material = M.Wood },
+		Roof = { Type = "Dome", Color = rgb(205, 45, 50), Material = M.SmoothPlastic, Height = 13, Radius = 21 },
+		Floor = { Color = rgb(130, 95, 65), Material = M.Wood },
+		Window = { Color = rgb(255, 230, 150), Material = M.Neon },
+		Door = { Color = rgb(130, 85, 55), Material = M.Wood },
+		Accent = rgb(205, 45, 50),
+		Light = rgb(255, 220, 150),
+		Features = { Spots = true, GlowShrooms = true },
+	},
+	{
+		Id = "ZenTeaHouse",
+		DisplayName = "Zen Tea House",
+		Emoji = "⛩️",
+		Tagline = "Layered pagoda roof, paper windows and red lanterns.",
+		Width = 34, Depth = 26, WallHeight = 12,
+		Wall = { Color = rgb(240, 232, 215), Material = M.Plaster },
+		Trim = { Color = rgb(110, 45, 35), Material = M.Wood },
+		Roof = { Type = "Pagoda", Color = rgb(50, 55, 62), Material = M.Slate },
+		Floor = { Color = rgb(190, 160, 110), Material = M.WoodPlanks },
+		Window = { Color = rgb(255, 238, 205), Material = M.Neon },
+		Door = { Color = rgb(160, 120, 80), Material = M.Wood },
+		Accent = rgb(200, 45, 40),
+		Light = rgb(255, 225, 185),
+		Features = { PaperLanterns = rgb(220, 50, 40) },
+	},
+	{
+		Id = "CrystalSpire",
+		DisplayName = "Crystal Spire",
+		Emoji = "💎",
+		Tagline = "Icy walls, a glass spire and glowing crystal clusters.",
+		Width = 30, Depth = 26, WallHeight = 15,
+		Wall = { Color = rgb(175, 215, 250), Material = M.Ice },
+		Trim = { Color = rgb(120, 200, 255), Material = M.Neon },
+		Roof = { Type = "Cone", Color = rgb(170, 140, 255), Material = M.Glass, Height = 20 },
+		Floor = { Color = rgb(220, 225, 240), Material = M.Marble },
+		Window = { Color = rgb(200, 170, 255), Material = M.Neon },
+		Door = { Color = rgb(130, 160, 210), Material = M.Ice },
+		Accent = rgb(170, 140, 255),
+		Light = rgb(190, 200, 255),
+		Features = { Crystals = true },
+	},
+	{
+		Id = "SunstoneBazaar",
+		DisplayName = "Sunstone Bazaar",
+		Emoji = "🏜️",
+		Tagline = "Desert sandstone, a teal onion dome and clay pots.",
+		Width = 34, Depth = 26, WallHeight = 13,
+		Wall = { Color = rgb(220, 180, 130), Material = M.Sandstone },
+		Trim = { Color = rgb(170, 120, 80), Material = M.Sandstone },
+		Roof = { Type = "Dome", Color = rgb(60, 145, 160), Material = M.CeramicTiles, Height = 9, Radius = 8 },
+		Floor = { Color = rgb(200, 140, 90), Material = M.CeramicTiles },
+		Window = { Color = rgb(255, 200, 120), Material = M.Neon },
+		Door = { Color = rgb(120, 70, 40), Material = M.Wood },
+		Accent = rgb(60, 145, 160),
+		Light = rgb(255, 195, 120),
+		Features = { Awning = { rgb(220, 80, 60), rgb(250, 230, 180) }, Pots = true, Crenellations = true },
+	},
+}
+
+HouseStyles.ById = {}
+for index, style in ipairs(HouseStyles.List) do
+	style.Order = index
+	HouseStyles.ById[style.Id] = style
+end
+
+function HouseStyles.Get(id: string?)
+	return (id and HouseStyles.ById[id]) or nil
+end
+
+return HouseStyles
+]]></string>
+        </Properties>
+      </Item>
+    </Item>
+  </Item>
+  <Item class="ServerScriptService" referent="5">
+    <Properties>
+      <string name="Name">ServerScriptService</string>
+    </Properties>
+    <Item class="Folder" referent="6">
+      <Properties>
+        <string name="Name">Server</string>
+      </Properties>
+      <Item class="ModuleScript" referent="7">
+        <Properties>
+          <string name="Name">BuildUtil</string>
+          <string name="Source"><![CDATA[--[[
+	BuildUtil
+	Small helpers for making anchored parts from code. Everything in Potion
+	Town is built by script, so the world can be rebuilt or restyled at any time.
+]]
+
+local BuildUtil = {}
+
+local UP = CFrame.Angles(0, 0, math.pi / 2) -- turns a Roblox cylinder (X axis) upright
+
+-- Creates an anchored part. `props` may contain any Part property, plus
+-- ClassName (e.g. "WedgePart") and Shape (applied before Size so balls work).
+function BuildUtil.Part(parent: Instance, size: Vector3, cframe: CFrame, color: Color3, material: Enum.Material, props: { [string]: any }?)
+	local part = Instance.new(props and props.ClassName or "Part")
+	if props and props.Shape then
+		part.Shape = props.Shape
+	end
+	part.Anchored = true
+	part.Size = size
+	part.CFrame = cframe
+	part.Color = color
+	part.Material = material
+	part.TopSurface = Enum.SurfaceType.Smooth
+	part.BottomSurface = Enum.SurfaceType.Smooth
+	if props then
+		for key, value in pairs(props) do
+			if key ~= "ClassName" and key ~= "Shape" then
+				part[key] = value
+			end
+		end
+	end
+	part.Parent = parent
+	return part
+end
+
+-- Upright cylinder whose centre is at `cframe`.
+function BuildUtil.Cylinder(parent, height: number, diameter: number, cframe: CFrame, color, material, props)
+	props = props or {}
+	props.Shape = Enum.PartType.Cylinder
+	return BuildUtil.Part(parent, Vector3.new(height, diameter, diameter), cframe * UP, color, material, props)
+end
+
+function BuildUtil.Ball(parent, diameter: number, cframe: CFrame, color, material, props)
+	props = props or {}
+	props.Shape = Enum.PartType.Ball
+	return BuildUtil.Part(parent, Vector3.one * diameter, cframe, color, material, props)
+end
+
+function BuildUtil.Light(part: BasePart, color: Color3, range: number, brightness: number, shadows: boolean?)
+	local light = Instance.new("PointLight")
+	light.Color = color
+	light.Range = range
+	light.Brightness = brightness
+	light.Shadows = shadows == true
+	light.Parent = part
+	return light
+end
+
+-- A round roof/dome/cone built from stacked cylinders.
+-- `baseCFrame` is the centre of the bottom of the shape.
+-- profile(t) returns the radius multiplier at height fraction t (0..1).
+function BuildUtil.Tiered(parent, baseCFrame: CFrame, radius: number, height: number, tiers: number, profile: (number) -> number, color, material, props)
+	local tierHeight = height / tiers
+	local parts = {}
+	for i = 1, tiers do
+		local t = (i - 1) / tiers
+		local r = math.max(radius * profile(t), 0.4)
+		local cf = baseCFrame * CFrame.new(0, (i - 0.5) * tierHeight, 0)
+		local copy = props and table.clone(props) or nil
+		parts[i] = { Part = BuildUtil.Cylinder(parent, tierHeight, r * 2, cf, color, material, copy), Radius = r, Y = (i - 0.5) * tierHeight }
+	end
+	return parts
+end
+
+BuildUtil.DomeProfile = function(t)
+	return math.sqrt(math.max(1 - t * t, 0))
+end
+
+BuildUtil.ConeProfile = function(t)
+	return 1 - t
+end
+
+-- Glowing lantern: dark frame, neon core and a warm point light.
+function BuildUtil.Lantern(parent, cframe: CFrame, lightColor: Color3, frameColor: Color3?, range: number?)
+	local frame = frameColor or Color3.fromRGB(40, 32, 30)
+	BuildUtil.Part(parent, Vector3.new(1.4, 0.3, 1.4), cframe * CFrame.new(0, 1, 0), frame, Enum.Material.Metal, { CanCollide = false })
+	BuildUtil.Part(parent, Vector3.new(1.4, 0.3, 1.4), cframe * CFrame.new(0, -1, 0), frame, Enum.Material.Metal, { CanCollide = false })
+	local core = BuildUtil.Part(parent, Vector3.new(1, 1.7, 1), cframe, lightColor, Enum.Material.Neon, { CanCollide = false, Name = "LanternCore" })
+	BuildUtil.Light(core, lightColor, range or 16, 1.4, true)
+	return core
+end
+
+-- Street lamp used around the plaza and at every plot entrance.
+function BuildUtil.LampPost(parent, groundCFrame: CFrame)
+	local metal = Color3.fromRGB(35, 30, 38)
+	BuildUtil.Cylinder(parent, 1, 1.6, groundCFrame * CFrame.new(0, 0.5, 0), metal, Enum.Material.Metal)
+	BuildUtil.Cylinder(parent, 10, 0.6, groundCFrame * CFrame.new(0, 5, 0), metal, Enum.Material.Metal)
+	BuildUtil.Lantern(parent, groundCFrame * CFrame.new(0, 11, 0), Color3.fromRGB(255, 190, 120), metal, 22)
+	BuildUtil.Part(parent, Vector3.new(2, 0.4, 2), groundCFrame * CFrame.new(0, 12.3, 0), metal, Enum.Material.Metal)
+end
+
+-- Floating name tag. Returns the BillboardGui and its two labels.
+function BuildUtil.Billboard(adornee: BasePart, title: string, subtitle: string, maxDistance: number?)
+	local gui = Instance.new("BillboardGui")
+	gui.Name = "NameTag"
+	gui.Size = UDim2.fromOffset(280, 72)
+	gui.LightInfluence = 0
+	gui.MaxDistance = maxDistance or 260
+	gui.Adornee = adornee
+
+	local titleLabel = Instance.new("TextLabel")
+	titleLabel.Name = "Title"
+	titleLabel.BackgroundTransparency = 1
+	titleLabel.Size = UDim2.new(1, 0, 0.6, 0)
+	titleLabel.Font = Enum.Font.FredokaOne
+	titleLabel.TextScaled = true
+	titleLabel.TextColor3 = Color3.fromRGB(255, 230, 170)
+	titleLabel.TextStrokeTransparency = 0.3
+	titleLabel.TextStrokeColor3 = Color3.fromRGB(40, 20, 50)
+	titleLabel.Text = title
+	titleLabel.Parent = gui
+
+	local subtitleLabel = Instance.new("TextLabel")
+	subtitleLabel.Name = "Subtitle"
+	subtitleLabel.BackgroundTransparency = 1
+	subtitleLabel.Position = UDim2.new(0, 0, 0.6, 0)
+	subtitleLabel.Size = UDim2.new(1, 0, 0.4, 0)
+	subtitleLabel.Font = Enum.Font.GothamBold
+	subtitleLabel.TextScaled = true
+	subtitleLabel.TextColor3 = Color3.fromRGB(235, 220, 255)
+	subtitleLabel.TextStrokeTransparency = 0.4
+	subtitleLabel.Text = subtitle
+	subtitleLabel.Parent = gui
+
+	gui.Parent = adornee
+	return gui, titleLabel, subtitleLabel
+end
+
+-- Text painted on one face of a part (used for shop signs).
+function BuildUtil.SurfaceText(part: BasePart, face: Enum.NormalId, text: string, textColor: Color3)
+	local gui = Instance.new("SurfaceGui")
+	gui.Face = face
+	gui.SizingMode = Enum.SurfaceGuiSizingMode.PixelsPerStud
+	gui.PixelsPerStud = 40
+	gui.LightInfluence = 0.3
+	local label = Instance.new("TextLabel")
+	label.BackgroundTransparency = 1
+	label.Size = UDim2.fromScale(1, 1)
+	label.Font = Enum.Font.FredokaOne
+	label.TextScaled = true
+	label.TextColor3 = textColor
+	label.Text = text
+	label.Parent = gui
+	gui.Parent = part
+	return label
+end
+
+function BuildUtil.Prompt(part: BasePart, actionText: string, objectText: string, holdDuration: number?)
+	local prompt = Instance.new("ProximityPrompt")
+	prompt.ActionText = actionText
+	prompt.ObjectText = objectText
+	prompt.HoldDuration = holdDuration or 0
+	prompt.MaxActivationDistance = 10
+	prompt.RequiresLineOfSight = false
+	prompt.Parent = part
+	return prompt
+end
+
+return BuildUtil
+]]></string>
+        </Properties>
+      </Item>
+      <Item class="ModuleScript" referent="8">
+        <Properties>
+          <string name="Name">HouseBuilder</string>
+          <string name="Source"><![CDATA[--[[
+	HouseBuilder
+	Turns a HouseStyles entry into a full potion shop on a plot:
+	  - the shell (foundation, walls, door, windows, roof)
+	  - style features (chimney, towers, awning, bows, crystals...)
+	  - a cosy interior (shelves of glowing bottles, cauldron, counter, lanterns)
+	  - the front yard (path, lamp posts, shop sign)
+
+	All coordinates below are in "house space": origin on the plot surface at
+	the house centre, -Z is the front of the house (towards the town plaza).
+]]
+
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+local Config = require(ReplicatedStorage.Shared.Config)
+local BuildUtil = require(script.Parent.BuildUtil)
+
+local Part = BuildUtil.Part
+local Cylinder = BuildUtil.Cylinder
+local Ball = BuildUtil.Ball
+local M = Enum.Material
+local rgb = Color3.fromRGB
+
+local T = 1 -- wall thickness
+local DOOR_W = 6
+local DOOR_H = 9
+local FLOOR_Y = 1.2 -- the walking surface inside the house
+local STONE = rgb(105, 100, 108)
+local WOOD_DARK = rgb(70, 45, 30)
+
+local HouseBuilder = {}
+
+--------------------------------------------------------------------------------
+-- Shell
+--------------------------------------------------------------------------------
+
+local function buildWindow(ctx, cf: CFrame, w: number, h: number)
+	-- `cf` is the window centre; its -Z faces outside.
+	local s = ctx.Style
+	local m = ctx.Model
+	local at = ctx.Origin * cf
+	Part(m, Vector3.new(w + 0.8, h + 0.8, T + 0.2), at, s.Trim.Color, s.Trim.Material)
+	Part(m, Vector3.new(w, h, T + 0.4), at, s.Window.Color, s.Window.Material, { Name = "Window" })
+	Part(m, Vector3.new(0.25, h, T + 0.6), at, s.Trim.Color, s.Trim.Material)
+	Part(m, Vector3.new(w, 0.25, T + 0.6), at, s.Trim.Color, s.Trim.Material)
+	Part(m, Vector3.new(w + 1.2, 0.3, T + 1.2), at * CFrame.new(0, -h / 2 - 0.5, 0), s.Trim.Color, s.Trim.Material)
+
+	if s.Features.FlowerBoxes then
+		local box = at * CFrame.new(0, -h / 2 - 1.2, -(T / 2 + 0.8))
+		Part(m, Vector3.new(w + 0.6, 0.9, 1.2), box, s.Trim.Color, s.Trim.Material)
+		for i = 1, math.floor(w / 1.1) do
+			local x = -w / 2 + (i - 0.5) * (w / math.floor(w / 1.1))
+			local color = (i % 2 == 0) and s.Accent or rgb(255, 245, 250)
+			Ball(m, 0.9, box * CFrame.new(x, 0.65, 0), color, M.SmoothPlastic, { CanCollide = false })
+		end
+	end
+
+	if s.Features.Bows then
+		HouseBuilder.Bow(m, at * CFrame.new(0, h / 2 + 0.9, -(T / 2 + 0.4)), s.Accent)
+	end
+end
+
+function HouseBuilder.Bow(parent, cf: CFrame, color: Color3)
+	Ball(parent, 1.3, cf * CFrame.new(-0.75, 0, 0), color, M.SmoothPlastic, { CanCollide = false })
+	Ball(parent, 1.3, cf * CFrame.new(0.75, 0, 0), color, M.SmoothPlastic, { CanCollide = false })
+	Ball(parent, 0.8, cf * CFrame.new(0, 0, -0.2), color, M.SmoothPlastic, { CanCollide = false })
+	Part(parent, Vector3.new(0.4, 1.3, 0.2), cf * CFrame.new(-0.35, -0.8, -0.1) * CFrame.Angles(0, 0, math.rad(-20)), color, M.SmoothPlastic, { CanCollide = false })
+	Part(parent, Vector3.new(0.4, 1.3, 0.2), cf * CFrame.new(0.35, -0.8, -0.1) * CFrame.Angles(0, 0, math.rad(20)), color, M.SmoothPlastic, { CanCollide = false })
+end
+
+local function buildShell(ctx)
+	local s, m, W, D, H = ctx.Style, ctx.Model, ctx.W, ctx.D, ctx.H
+	local function L(x, y, z)
+		return ctx.Origin * CFrame.new(x, y, z)
+	end
+	local wallY = 1 + H / 2
+
+	-- Foundation + floor
+	Part(m, Vector3.new(W + 2, 1, D + 2), L(0, 0.5, 0), STONE, M.Cobblestone, { Name = "Foundation" })
+	Part(m, Vector3.new(W - 2 * T, 0.2, D - 2 * T), L(0, 1.1, 0), s.Floor.Color, s.Floor.Material, { Name = "Floor" })
+
+	-- Walls (the front wall is split around the door)
+	local wc, wm = s.Wall.Color, s.Wall.Material
+	Part(m, Vector3.new(W, H, T), L(0, wallY, D / 2 - T / 2), wc, wm, { Name = "BackWall" })
+	Part(m, Vector3.new(T, H, D - 2 * T), L(-W / 2 + T / 2, wallY, 0), wc, wm, { Name = "LeftWall" })
+	Part(m, Vector3.new(T, H, D - 2 * T), L(W / 2 - T / 2, wallY, 0), wc, wm, { Name = "RightWall" })
+	local segW = (W - DOOR_W) / 2
+	local segX = DOOR_W / 2 + segW / 2
+	local frontZ = -D / 2 + T / 2
+	Part(m, Vector3.new(segW, H, T), L(-segX, wallY, frontZ), wc, wm, { Name = "FrontWall" })
+	Part(m, Vector3.new(segW, H, T), L(segX, wallY, frontZ), wc, wm, { Name = "FrontWall" })
+	Part(m, Vector3.new(DOOR_W, H - DOOR_H, T), L(0, 1 + DOOR_H + (H - DOOR_H) / 2, frontZ), wc, wm, { Name = "FrontWall" })
+
+	-- Trim: corner posts and a band along the top of the walls
+	local tc, tm = s.Trim.Color, s.Trim.Material
+	if not (s.Features.CornerTowers or s.Features.LogCorners) then
+		for _, sx in { -1, 1 } do
+			for _, sz in { -1, 1 } do
+				Part(m, Vector3.new(T + 0.4, H, T + 0.4), L(sx * (W / 2 - T / 2), wallY, sz * (D / 2 - T / 2)), tc, tm)
+			end
+		end
+	end
+	Part(m, Vector3.new(W + 0.4, 0.8, T + 0.4), L(0, ctx.WallTop - 0.4, frontZ), tc, tm)
+	Part(m, Vector3.new(W + 0.4, 0.8, T + 0.4), L(0, ctx.WallTop - 0.4, D / 2 - T / 2), tc, tm)
+	Part(m, Vector3.new(T + 0.4, 0.8, D), L(-W / 2 + T / 2, ctx.WallTop - 0.4, 0), tc, tm)
+	Part(m, Vector3.new(T + 0.4, 0.8, D), L(W / 2 - T / 2, ctx.WallTop - 0.4, 0), tc, tm)
+
+	-- Door frame
+	Part(m, Vector3.new(0.6, DOOR_H, T + 0.4), L(-DOOR_W / 2 - 0.3, 1 + DOOR_H / 2, frontZ), tc, tm)
+	Part(m, Vector3.new(0.6, DOOR_H, T + 0.4), L(DOOR_W / 2 + 0.3, 1 + DOOR_H / 2, frontZ), tc, tm)
+	Part(m, Vector3.new(DOOR_W + 1.2, 0.6, T + 0.4), L(0, 1 + DOOR_H + 0.3, frontZ), tc, tm)
+	Part(m, Vector3.new(DOOR_W + 1, 0.4, 2.4), L(0, 0.8, -D / 2 - 1.2), STONE, M.Slate, { Name = "Doorstep" })
+
+	-- The door swings inwards around a hinge on its left edge
+	local hinge = L(-DOOR_W / 2, 1 + DOOR_H / 2, frontZ)
+	local closed = hinge * CFrame.new(DOOR_W / 2, 0, 0)
+	local open = hinge * CFrame.Angles(0, math.rad(-100), 0) * CFrame.new(DOOR_W / 2, 0, 0)
+	local door = Part(m, Vector3.new(DOOR_W - 0.1, DOOR_H - 0.1, 0.5), closed, s.Door.Color, s.Door.Material, { Name = "Door" })
+	ctx.Info.Door = { Part = door, Closed = closed, Open = open }
+
+	-- Windows: two on the front, two on the right, two small high ones on the
+	-- left (the left wall is lined with shelves inside).
+	local frontW = math.min(6, segW - 3)
+	buildWindow(ctx, CFrame.new(-segX, 1 + H * 0.48, frontZ), frontW, 5)
+	buildWindow(ctx, CFrame.new(segX, 1 + H * 0.48, frontZ), frontW, 5)
+	for _, z in { -D / 4, D / 4 } do
+		buildWindow(ctx, CFrame.new(W / 2 - T / 2, 1 + H * 0.48, z) * CFrame.Angles(0, math.rad(-90), 0), 5, 5)
+		buildWindow(ctx, CFrame.new(-W / 2 + T / 2, ctx.WallTop - 3.2, z) * CFrame.Angles(0, math.rad(90), 0), 4, 2.4)
+	end
+end
+
+--------------------------------------------------------------------------------
+-- Roofs. Each returns the height (house space) of the highest point.
+--------------------------------------------------------------------------------
+
+local Roofs = {}
+
+function Roofs.Gable(ctx)
+	local s, m, W, D = ctx.Style, ctx.Model, ctx.W, ctx.D
+	local top = ctx.WallTop
+	local rh = s.Roof.Height or W * 0.35
+	ctx.RoofRise = rh
+
+	-- Two wedges fill the attic and close the gable ends. A WedgePart is tall
+	-- at its +Z end, so each half is turned to face the ridge.
+	Part(m, Vector3.new(D, rh, W / 2), ctx.Origin * CFrame.new(W / 4, top + rh / 2, 0) * CFrame.Angles(0, -math.pi / 2, 0), s.Wall.Color, s.Wall.Material, { ClassName = "WedgePart", Name = "Gable" })
+	Part(m, Vector3.new(D, rh, W / 2), ctx.Origin * CFrame.new(-W / 4, top + rh / 2, 0) * CFrame.Angles(0, math.pi / 2, 0), s.Wall.Color, s.Wall.Material, { ClassName = "WedgePart", Name = "Gable" })
+
+	-- Two sloped roof slabs with an overhang at the eaves and gable ends
+	local half = W / 2
+	local alpha = math.atan2(rh, half)
+	local overhang = 2.5
+	local length = math.sqrt(half * half + rh * rh) + overhang
+	local downX, downY = math.cos(alpha), -math.sin(alpha)
+	local normX, normY = math.sin(alpha), math.cos(alpha)
+	local cx = half / 2 + downX * overhang / 2 + normX * 0.4
+	local cy = top + rh / 2 + downY * overhang / 2 + normY * 0.4
+	local size = Vector3.new(length, 0.8, D + 3)
+	Part(m, size, ctx.Origin * CFrame.new(cx, cy, 0) * CFrame.Angles(0, 0, -alpha), s.Roof.Color, s.Roof.Material, { Name = "Roof" })
+	Part(m, size, ctx.Origin * CFrame.new(-cx, cy, 0) * CFrame.Angles(0, 0, alpha), s.Roof.Color, s.Roof.Material, { Name = "Roof" })
+	Part(m, Vector3.new(1.3, 1.3, D + 3.2), ctx.Origin * CFrame.new(0, top + rh + 0.3, 0) * CFrame.Angles(0, 0, math.pi / 4), s.Trim.Color, s.Trim.Material, { Name = "Ridge" })
+	return top + rh + 1
+end
+
+local function flatSlab(ctx)
+	local s = ctx.Style
+	Part(ctx.Model, Vector3.new(ctx.W + 2, 1, ctx.D + 2), ctx.Origin * CFrame.new(0, ctx.WallTop + 0.5, 0), s.Roof.Color, s.Roof.Material, { Name = "Roof" })
+	ctx.RoofRise = 1
+	return ctx.WallTop + 1
+end
+
+function Roofs.Flat(ctx)
+	return flatSlab(ctx)
+end
+
+function Roofs.Dome(ctx)
+	local s = ctx.Style
+	local base = flatSlab(ctx)
+	local radius = s.Roof.Radius or math.min(ctx.W, ctx.D) / 2 - 1
+	local height = s.Roof.Height or radius
+	local tiers = BuildUtil.Tiered(ctx.Model, ctx.Origin * CFrame.new(0, base, 0), radius, height, 10, BuildUtil.DomeProfile, s.Roof.Color, s.Roof.Material, { Name = "Roof" })
+
+	if s.Features.Spots then
+		for i = 1, #tiers - 2 do
+			local tier = tiers[i]
+			for _ = 1, 3 do
+				local angle = ctx.Rng:NextNumber() * math.pi * 2
+				local r = tier.Radius - 0.5
+				Ball(ctx.Model, ctx.Rng:NextNumber(1.6, 2.8), ctx.Origin * CFrame.new(math.cos(angle) * r, base + tier.Y, math.sin(angle) * r), rgb(255, 250, 240), M.SmoothPlastic, { CanCollide = false })
+			end
+		end
+	else
+		Ball(ctx.Model, 1.6, ctx.Origin * CFrame.new(0, base + height + 0.6, 0), s.Accent, M.Neon, { CanCollide = false })
+	end
+	ctx.RoofRise = height
+	return base + height + 1.4
+end
+
+function Roofs.Cone(ctx)
+	local s = ctx.Style
+	local base = flatSlab(ctx)
+	local radius = s.Roof.Radius or math.min(ctx.W, ctx.D) / 2
+	local height = s.Roof.Height or radius * 1.4
+	BuildUtil.Tiered(ctx.Model, ctx.Origin * CFrame.new(0, base, 0), radius, height, 12, BuildUtil.ConeProfile, s.Roof.Color, s.Roof.Material, { Name = "Roof", Transparency = s.Roof.Material == M.Glass and 0.2 or 0 })
+	local tip = Ball(ctx.Model, 2.2, ctx.Origin * CFrame.new(0, base + height + 1, 0), s.Trim.Color, M.Neon, { CanCollide = false })
+	BuildUtil.Light(tip, s.Trim.Color, 24, 2)
+	ctx.RoofRise = height
+	return base + height + 2
+end
+
+function Roofs.Pagoda(ctx)
+	local s, m, W, D = ctx.Style, ctx.Model, ctx.W, ctx.D
+	local y = ctx.WallTop
+	for level = 0, 2 do
+		local ew, ed = W + 8 - level * 8, D + 8 - level * 8
+		Part(m, Vector3.new(ew, 0.9, ed), ctx.Origin * CFrame.new(0, y + 0.45, 0), s.Roof.Color, s.Roof.Material, { Name = "Roof" })
+		-- upturned eave tips
+		for _, sx in { -1, 1 } do
+			for _, sz in { -1, 1 } do
+				Part(m, Vector3.new(1.2, 1, 1.2), ctx.Origin * CFrame.new(sx * (ew / 2 - 0.6), y + 1.3, sz * (ed / 2 - 0.6)), s.Trim.Color, s.Trim.Material)
+			end
+		end
+		y += 0.9
+		if level < 2 then
+			Part(m, Vector3.new(W - 6 - level * 8, 3.2, D - 6 - level * 8), ctx.Origin * CFrame.new(0, y + 1.6, 0), s.Wall.Color, s.Wall.Material)
+			y += 3.2
+		end
+	end
+	Cylinder(m, 3, 0.8, ctx.Origin * CFrame.new(0, y + 1.5, 0), s.Trim.Color, s.Trim.Material)
+	Ball(m, 1.4, ctx.Origin * CFrame.new(0, y + 3.3, 0), rgb(255, 205, 90), M.Neon, { CanCollide = false })
+	ctx.RoofRise = y - ctx.WallTop
+	return y + 4
+end
+
+--------------------------------------------------------------------------------
+-- Style features
+--------------------------------------------------------------------------------
+
+local function smokeEmitter(parent, cf: CFrame)
+	local holder = Part(parent, Vector3.new(1, 1, 1), cf, rgb(0, 0, 0), M.SmoothPlastic, { Transparency = 1, CanCollide = false, CanQuery = false, Name = "Smoke" })
+	local smoke = Instance.new("ParticleEmitter")
+	smoke.Texture = "rbxasset://textures/particles/smoke_main.dds"
+	smoke.Color = ColorSequence.new(rgb(200, 195, 210), rgb(120, 115, 130))
+	smoke.Transparency = NumberSequence.new({ NumberSequenceKeypoint.new(0, 0.5), NumberSequenceKeypoint.new(1, 1) })
+	smoke.Size = NumberSequence.new({ NumberSequenceKeypoint.new(0, 1.5), NumberSequenceKeypoint.new(1, 5) })
+	smoke.Lifetime = NumberRange.new(4, 6)
+	smoke.Speed = NumberRange.new(2, 4)
+	smoke.Rate = 3
+	smoke.SpreadAngle = Vector2.new(12, 12)
+	smoke.Acceleration = Vector3.new(0.6, 0.6, 0)
+	smoke.RotSpeed = NumberRange.new(-20, 20)
+	smoke.Parent = holder
+end
+
+local Features = {}
+
+function Features.Chimney(ctx)
+	local W, D = ctx.W, ctx.D
+	local x, z = W / 2 - 6, D / 4
+	local roofAtX = ctx.Style.Roof.Type == "Gable" and ctx.RoofRise * (1 - x / (W / 2)) or ctx.RoofRise
+	local topY = ctx.WallTop + roofAtX + 3.5
+	local height = topY - ctx.WallTop
+	local brick = rgb(125, 72, 60)
+	Part(ctx.Model, Vector3.new(3, height, 3), ctx.Origin * CFrame.new(x, ctx.WallTop + height / 2, z), brick, M.Brick, { Name = "Chimney" })
+	Part(ctx.Model, Vector3.new(3.8, 0.6, 3.8), ctx.Origin * CFrame.new(x, topY + 0.3, z), STONE, M.Slate)
+	smokeEmitter(ctx.Model, ctx.Origin * CFrame.new(x, topY + 1, z))
+end
+
+function Features.Lanterns(ctx)
+	for _, sx in { -1, 1 } do
+		local cf = ctx.Origin * CFrame.new(sx * (DOOR_W / 2 + 2), 1 + DOOR_H - 1.8, -ctx.D / 2 - 0.9)
+		Part(ctx.Model, Vector3.new(0.3, 0.3, 1), cf * CFrame.new(0, 1.3, 0.4), WOOD_DARK, M.Metal)
+		BuildUtil.Lantern(ctx.Model, cf, ctx.Style.Light, nil, 14)
+	end
+end
+
+function Features.NeonStrips(ctx)
+	local s, W, D = ctx.Style, ctx.W, ctx.D
+	local color = s.Accent
+	for _, sz in { -1, 1 } do
+		Part(ctx.Model, Vector3.new(W + 2.4, 0.3, 0.3), ctx.Origin * CFrame.new(0, 1, sz * (D / 2 + 1.05)), color, M.Neon, { CanCollide = false })
+	end
+	for _, sx in { -1, 1 } do
+		Part(ctx.Model, Vector3.new(0.3, 0.3, D + 2.4), ctx.Origin * CFrame.new(sx * (W / 2 + 1.05), 1, 0), color, M.Neon, { CanCollide = false })
+	end
+end
+
+function Features.Antenna(ctx)
+	local top = ctx.WallTop + 1 + ctx.RoofRise
+	Cylinder(ctx.Model, 6, 0.35, ctx.Origin * CFrame.new(0, top + 3, 0), rgb(180, 185, 195), M.Metal)
+	local bulb = Ball(ctx.Model, 1.1, ctx.Origin * CFrame.new(0, top + 6.3, 0), rgb(255, 60, 90), M.Neon, { CanCollide = false })
+	BuildUtil.Light(bulb, rgb(255, 60, 90), 10, 1.5)
+end
+
+function Features.Bows(ctx)
+	-- One big bow over the door (window bows are added in buildWindow)
+	HouseBuilder.Bow(ctx.Model, ctx.Origin * CFrame.new(0, ctx.WallTop - 0.3, -ctx.D / 2 - 0.6), ctx.Style.Accent)
+end
+
+function Features.Awning(ctx, colors)
+	local W, D = ctx.W, ctx.D
+	local span = W - 4
+	local strips = math.floor(span / 2)
+	local stripW = span / strips
+	local depth, tilt = 5, math.rad(22)
+	local y0, z0 = 1 + DOOR_H + 0.8, -D / 2
+	local cy = y0 - math.sin(tilt) * depth / 2
+	local cz = z0 - math.cos(tilt) * depth / 2
+	for i = 1, strips do
+		local x = -span / 2 + (i - 0.5) * stripW
+		Part(ctx.Model, Vector3.new(stripW, 0.3, depth), ctx.Origin * CFrame.new(x, cy, cz) * CFrame.Angles(-tilt, 0, 0), colors[(i % 2) + 1], M.Fabric, { Name = "Awning" })
+	end
+	-- scalloped edge
+	local edgeY = y0 - math.sin(tilt) * depth - 0.2
+	local edgeZ = z0 - math.cos(tilt) * depth
+	for i = 1, strips do
+		local x = -span / 2 + (i - 0.5) * stripW
+		Ball(ctx.Model, stripW * 0.9, ctx.Origin * CFrame.new(x, edgeY, edgeZ), colors[(i % 2) + 1], M.Fabric, { CanCollide = false })
+	end
+end
+
+function Features.FlowerBoxes(_ctx)
+	-- handled per window in buildWindow
+end
+
+function Features.Spots(_ctx)
+	-- handled in Roofs.Dome
+end
+
+function Features.Crenellations(ctx)
+	local W, D = ctx.W, ctx.D
+	local y = ctx.WallTop + 1 + 0.9
+	local color, material = ctx.Style.Wall.Color, ctx.Style.Wall.Material
+	local size = Vector3.new(1.8, 1.8, 1.2)
+	local x = -W / 2 + 1
+	while x <= W / 2 - 1 do
+		Part(ctx.Model, size, ctx.Origin * CFrame.new(x, y, -D / 2 - 0.4), color, material)
+		Part(ctx.Model, size, ctx.Origin * CFrame.new(x, y, D / 2 + 0.4), color, material)
+		x += 3.6
+	end
+	local z = -D / 2 + 2.8
+	while z <= D / 2 - 1 do
+		Part(ctx.Model, size, ctx.Origin * CFrame.new(-W / 2 - 0.4, y, z) * CFrame.Angles(0, math.pi / 2, 0), color, material)
+		Part(ctx.Model, size, ctx.Origin * CFrame.new(W / 2 + 0.4, y, z) * CFrame.Angles(0, math.pi / 2, 0), color, material)
+		z += 3.6
+	end
+end
+
+function Features.CornerTowers(ctx, roofColor)
+	local s, W, D, H = ctx.Style, ctx.W, ctx.D, ctx.H
+	local towerH = H + 7
+	for _, sx in { -1, 1 } do
+		for _, sz in { -1, 1 } do
+			local x, z = sx * W / 2, sz * D / 2
+			Cylinder(ctx.Model, towerH, 7, ctx.Origin * CFrame.new(x, 1 + towerH / 2, z), s.Wall.Color, s.Wall.Material, { Name = "Tower" })
+			Cylinder(ctx.Model, 0.8, 8, ctx.Origin * CFrame.new(x, 1 + towerH + 0.4, z), s.Trim.Color, s.Trim.Material)
+			BuildUtil.Tiered(ctx.Model, ctx.Origin * CFrame.new(x, 1 + towerH + 0.8, z), 4.6, 9, 9, BuildUtil.ConeProfile, roofColor, M.Slate)
+			Part(ctx.Model, Vector3.new(0.9, 3, 0.6), ctx.Origin * CFrame.new(x, 1 + towerH - 4, z + sz * 3.4), s.Window.Color, s.Window.Material, { CanCollide = false })
+		end
+	end
+end
+
+function Features.LogCorners(ctx)
+	local s, W, D, H = ctx.Style, ctx.W, ctx.D, ctx.H
+	local rows = math.floor(H / 1.6)
+	for _, sx in { -1, 1 } do
+		for _, sz in { -1, 1 } do
+			for k = 0, rows - 1 do
+				local y = 1 + 0.8 + k * 1.6
+				local cf
+				if k % 2 == 0 then
+					cf = ctx.Origin * CFrame.new(sx * (W / 2 - 1), y, sz * (D / 2 - 0.5))
+				else
+					cf = ctx.Origin * CFrame.new(sx * (W / 2 - 0.5), y, sz * (D / 2 - 1)) * CFrame.Angles(0, math.pi / 2, 0)
+				end
+				Part(ctx.Model, Vector3.new(5, 1.6, 1.6), cf, s.Trim.Color, M.Wood, { Shape = Enum.PartType.Cylinder })
+			end
+		end
+	end
+end
+
+function Features.PaperLanterns(ctx, color)
+	local W, D = ctx.W, ctx.D
+	local spots = {
+		Vector3.new(W / 2 + 2.5, ctx.WallTop - 1.4, -D / 2 - 2.5),
+		Vector3.new(-W / 2 - 2.5, ctx.WallTop - 1.4, -D / 2 - 2.5),
+		Vector3.new(W / 2 + 2.5, ctx.WallTop - 1.4, D / 2 + 2.5),
+		Vector3.new(-W / 2 - 2.5, ctx.WallTop - 1.4, D / 2 + 2.5),
+		Vector3.new(DOOR_W / 2 + 2, 1 + DOOR_H - 1, -D / 2 - 1.2),
+		Vector3.new(-DOOR_W / 2 - 2, 1 + DOOR_H - 1, -D / 2 - 1.2),
+	}
+	for i, p in spots do
+		local cf = ctx.Origin * CFrame.new(p)
+		Part(ctx.Model, Vector3.new(0.15, 1.2, 0.15), cf * CFrame.new(0, 1.6, 0), WOOD_DARK, M.SmoothPlastic, { CanCollide = false })
+		local lantern = Ball(ctx.Model, 1.8, cf, color, M.Neon, { CanCollide = false, Transparency = 0.1 })
+		Part(ctx.Model, Vector3.new(1.2, 0.3, 1.2), cf * CFrame.new(0, 0.95, 0), WOOD_DARK, M.Wood, { CanCollide = false })
+		if i > 4 then
+			BuildUtil.Light(lantern, rgb(255, 150, 110), 14, 1.3)
+		end
+	end
+end
+
+function Features.Crystals(ctx)
+	local colors = { ctx.Style.Accent, ctx.Style.Trim.Color, rgb(255, 160, 240) }
+	local W, D = ctx.W, ctx.D
+	local spots = {
+		Vector3.new(-W / 2 - 3, 0, -D / 2 - 3), Vector3.new(W / 2 + 3, 0, -D / 2 - 3),
+		Vector3.new(-W / 2 - 3, 0, D / 2 + 2), Vector3.new(W / 2 + 3, 0, D / 2 + 2),
+		Vector3.new(-W / 2 - 3.5, 0, 0), Vector3.new(W / 2 + 3.5, 0, 0),
+		Vector3.new(-DOOR_W / 2 - 9, 0, -D / 2 - 6), Vector3.new(DOOR_W / 2 + 9, 0, -D / 2 - 6),
+	}
+	for _, p in spots do
+		for _ = 1, 3 do
+			local h = ctx.Rng:NextNumber(3, 7)
+			local tilt = CFrame.Angles(ctx.Rng:NextNumber(-0.4, 0.4), ctx.Rng:NextNumber(0, math.pi), ctx.Rng:NextNumber(-0.4, 0.4))
+			local cf = ctx.Origin * CFrame.new(p + Vector3.new(ctx.Rng:NextNumber(-1, 1), 0, ctx.Rng:NextNumber(-1, 1))) * tilt * CFrame.new(0, h / 2 - 0.5, 0)
+			Part(ctx.Model, Vector3.new(1.1, h, 1.1), cf, colors[ctx.Rng:NextInteger(1, #colors)], M.Neon, { CanCollide = false, Transparency = 0.15 })
+		end
+	end
+end
+
+function Features.Pots(ctx)
+	local clay = rgb(180, 100, 62)
+	local D = ctx.D
+	local spots = { Vector3.new(-DOOR_W / 2 - 3, 0, -D / 2 - 2.5), Vector3.new(DOOR_W / 2 + 3, 0, -D / 2 - 2.5), Vector3.new(-ctx.W / 2 - 1.5, 0, -D / 2 - 4), Vector3.new(ctx.W / 2 + 1.5, 0, -D / 2 - 4) }
+	for _, p in spots do
+		local cf = ctx.Origin * CFrame.new(p)
+		Cylinder(ctx.Model, 2.4, 2.4, cf * CFrame.new(0, 1.2, 0), clay, M.Concrete)
+		Cylinder(ctx.Model, 0.4, 2.8, cf * CFrame.new(0, 2.4, 0), clay, M.Concrete)
+		Ball(ctx.Model, 2.2, cf * CFrame.new(0, 3, 0), rgb(70, 140, 70), M.Grass, { CanCollide = false })
+	end
+end
+
+function Features.GlowShrooms(ctx)
+	local colors = { rgb(120, 230, 255), rgb(200, 120, 255), rgb(255, 140, 200) }
+	for i = 1, 7 do
+		local x = ctx.Rng:NextNumber(-ctx.W / 2 - 2, ctx.W / 2 + 2)
+		if math.abs(x) < 4 then
+			x += 8
+		end
+		local z = -ctx.D / 2 - ctx.Rng:NextNumber(3, 14)
+		local h = ctx.Rng:NextNumber(1, 2.4)
+		local cf = ctx.Origin * CFrame.new(x, 0, z)
+		Cylinder(ctx.Model, h, 0.5, cf * CFrame.new(0, h / 2, 0), rgb(240, 235, 220), M.SmoothPlastic, { CanCollide = false })
+		local cap = Cylinder(ctx.Model, 0.5, h * 1.3, cf * CFrame.new(0, h, 0), colors[(i % #colors) + 1], M.Neon, { CanCollide = false })
+		if i <= 2 then
+			BuildUtil.Light(cap, colors[(i % #colors) + 1], 8, 1)
+		end
+	end
+end
+
+function Features.HayBales(ctx)
+	local hay = rgb(222, 190, 95)
+	local yard = ctx.PlotOrigin
+	Part(ctx.Model, Vector3.new(4, 2.4, 2.6), yard * CFrame.new(-20, 1.2, -18), hay, M.Grass)
+	Part(ctx.Model, Vector3.new(4, 2.4, 2.6), yard * CFrame.new(-16, 1.2, -18.5) * CFrame.Angles(0, 0.3, 0), hay, M.Grass)
+	Part(ctx.Model, Vector3.new(4, 2.4, 2.6), yard * CFrame.new(-18, 3.6, -18.2) * CFrame.Angles(0, 0.15, 0), hay, M.Grass)
+end
+
+function Features.Fence(ctx)
+	local white = rgb(245, 242, 235)
+	local half = Config.PlotSize / 2 - 1
+	local function run(from: Vector3, to: Vector3)
+		local delta = to - from
+		local length = delta.Magnitude
+		local mid = (from + to) / 2
+		local look = ctx.PlotOrigin * CFrame.lookAt(mid, mid + delta)
+		for _, y in { 1.1, 2.3 } do
+			Part(ctx.Model, Vector3.new(0.25, 0.4, length), look * CFrame.new(0, y, 0), white, M.WoodPlanks)
+		end
+		local posts = math.floor(length / 3.5)
+		for i = 0, posts do
+			local p = from + delta * (i / posts)
+			Part(ctx.Model, Vector3.new(0.6, 3.2, 0.6), ctx.PlotOrigin * CFrame.new(p + Vector3.new(0, 1.6, 0)), white, M.WoodPlanks)
+		end
+	end
+	run(Vector3.new(-half, 0, half), Vector3.new(half, 0, half))
+	run(Vector3.new(-half, 0, -half), Vector3.new(-half, 0, half))
+	run(Vector3.new(half, 0, -half), Vector3.new(half, 0, half))
+	run(Vector3.new(-half, 0, -half), Vector3.new(-6, 0, -half))
+	run(Vector3.new(6, 0, -half), Vector3.new(half, 0, -half))
+end
+
+--------------------------------------------------------------------------------
+-- Interior
+--------------------------------------------------------------------------------
+
+local function bottle(ctx, standCF: CFrame)
+	local rng = ctx.Rng
+	local color = Config.PotionColors[rng:NextInteger(1, #Config.PotionColors)]
+	local glowing = rng:NextNumber() < 0.4
+	local material = glowing and M.Neon or M.Glass
+	local props = { CanCollide = false, CastShadow = false, Transparency = glowing and 0 or 0.15 }
+	local cork = rgb(150, 105, 70)
+	local kind = rng:NextInteger(1, 3)
+	local m = ctx.Model
+	if kind == 1 then -- round flask
+		Ball(m, 1.1, standCF * CFrame.new(0, 0.55, 0), color, material, table.clone(props))
+		Cylinder(m, 0.6, 0.35, standCF * CFrame.new(0, 1.3, 0), color, M.Glass, table.clone(props))
+		Cylinder(m, 0.25, 0.42, standCF * CFrame.new(0, 1.7, 0), cork, M.Wood, { CanCollide = false, CastShadow = false })
+	elseif kind == 2 then -- tall vial
+		Cylinder(m, 1.5, 0.6, standCF * CFrame.new(0, 0.75, 0), color, material, table.clone(props))
+		Cylinder(m, 0.25, 0.45, standCF * CFrame.new(0, 1.62, 0), cork, M.Wood, { CanCollide = false, CastShadow = false })
+	else -- squat jar
+		Cylinder(m, 1.1, 1.0, standCF * CFrame.new(0, 0.55, 0), color, material, table.clone(props))
+		Cylinder(m, 0.2, 1.1, standCF * CFrame.new(0, 1.2, 0), cork, M.Wood, { CanCollide = false, CastShadow = false })
+	end
+end
+
+local function shelfUnit(ctx, cf: CFrame, length: number, levels: { number })
+	-- `cf` sits on the floor at the middle of the unit; shelves run along local X.
+	local wood = WOOD_DARK
+	local topLevel = levels[#levels]
+	for _, x in { -length / 2, 0, length / 2 } do
+		Part(ctx.Model, Vector3.new(0.4, topLevel + 0.6, 1.7), cf * CFrame.new(x, (topLevel + 0.6) / 2, 0), wood, M.Wood)
+	end
+	for _, y in levels do
+		Part(ctx.Model, Vector3.new(length + 0.4, 0.3, 1.7), cf * CFrame.new(0, y, 0), wood, M.WoodPlanks)
+		local count = math.floor((length - 0.6) / 1.5)
+		for i = 1, count do
+			local x = -length / 2 + 0.3 + (i - 0.5) * ((length - 0.6) / count)
+			if math.abs(x) > 0.5 and math.abs(math.abs(x) - length / 2) > 0.5 and ctx.Rng:NextNumber() < 0.85 then
+				bottle(ctx, cf * CFrame.new(x, y + 0.15, ctx.Rng:NextNumber(-0.3, 0.3)))
+			end
+		end
+	end
+end
+
+local function buildCauldron(ctx, cf: CFrame)
+	local m = ctx.Model
+	local iron = rgb(38, 36, 42)
+	for i = 0, 2 do
+		local a = i * math.pi * 2 / 3
+		Cylinder(m, 0.8, 0.5, cf * CFrame.new(math.cos(a) * 1.6, 0.4, math.sin(a) * 1.6), iron, M.Metal)
+	end
+	local radii = { 1.7, 2.3, 2.6, 2.7, 2.6 }
+	local y = 0.6
+	for _, r in radii do
+		Cylinder(m, 0.7, r * 2, cf * CFrame.new(0, y + 0.35, 0), iron, M.Metal, { Name = "Cauldron" })
+		y += 0.7
+	end
+	Cylinder(m, 0.4, 5.8, cf * CFrame.new(0, y + 0.2, 0), rgb(55, 52, 60), M.Metal, { Name = "CauldronRim" })
+	local liquidColor = Config.PotionColors[1]
+	local liquid = Cylinder(m, 0.2, 4.8, cf * CFrame.new(0, y + 0.35, 0), liquidColor, M.Neon, { Name = "Brew", CanCollide = false })
+
+	local fx = Part(m, Vector3.new(4, 0.2, 4), cf * CFrame.new(0, y + 0.6, 0), rgb(0, 0, 0), M.SmoothPlastic, { Transparency = 1, CanCollide = false, CanQuery = false, Name = "BrewFX" })
+	local light = BuildUtil.Light(fx, liquidColor, 16, 2.2, true)
+	local bubbles = Instance.new("ParticleEmitter")
+	bubbles.Name = "Bubbles"
+	bubbles.Color = ColorSequence.new(liquidColor)
+	bubbles.LightEmission = 0.8
+	bubbles.Transparency = NumberSequence.new({ NumberSequenceKeypoint.new(0, 0.2), NumberSequenceKeypoint.new(1, 1) })
+	bubbles.Size = NumberSequence.new({ NumberSequenceKeypoint.new(0, 0.4), NumberSequenceKeypoint.new(1, 1.8) })
+	bubbles.Lifetime = NumberRange.new(1.5, 3)
+	bubbles.Speed = NumberRange.new(2, 4)
+	bubbles.Rate = 10
+	bubbles.SpreadAngle = Vector2.new(18, 18)
+	bubbles.Parent = fx
+
+	local embers = Part(m, Vector3.new(1.6, 0.3, 1.6), cf * CFrame.new(0, 0.2, 0), rgb(255, 120, 40), M.Neon, { CanCollide = false })
+	local fire = Instance.new("Fire")
+	fire.Size = 3
+	fire.Heat = 3
+	fire.Color = rgb(255, 140, 50)
+	fire.SecondaryColor = rgb(255, 60, 20)
+	fire.Parent = embers
+
+	local prompt = BuildUtil.Prompt(fx, "Stir", "Cauldron")
+	prompt.MaxActivationDistance = 9
+	ctx.Info.Cauldron = { Liquid = liquid, Light = light, Bubbles = bubbles, Prompt = prompt, BaseColor = liquidColor }
+end
+
+local function buildInterior(ctx)
+	local s, m, W, D = ctx.Style, ctx.Model, ctx.W, ctx.D
+	local function L(x, y, z)
+		return ctx.Origin * CFrame.new(x, y, z)
+	end
+	local top = ctx.WallTop
+
+	-- Rug + cauldron in the middle of the room
+	Part(m, Vector3.new(W * 0.45, 0.06, D * 0.42), L(0, FLOOR_Y + 0.03, 2), s.Accent, M.Carpet, { CanCollide = false })
+	buildCauldron(ctx, L(0, FLOOR_Y, 2))
+
+	-- Shelves full of potion bottles on the back and left walls
+	shelfUnit(ctx, L(0, FLOOR_Y, D / 2 - T - 0.9), W - 2 * T - 2, { 2.6, 5.4, 8.2 })
+	local zA, zB = -D / 2 + 8.5, D / 2 - T - 2.5
+	shelfUnit(ctx, L(-W / 2 + T + 0.9, FLOOR_Y, (zA + zB) / 2) * CFrame.Angles(0, math.pi / 2, 0), zB - zA, { 2.6, 5.4 })
+
+	-- Shop counter by the door, with a till and a little bell
+	local counter = L(W / 4 + 1, FLOOR_Y, -D / 2 + 5.5)
+	Part(m, Vector3.new(9, 3.5, 2.4), counter * CFrame.new(0, 1.75, 0), WOOD_DARK, M.WoodPlanks, { Name = "Counter" })
+	Part(m, Vector3.new(9.6, 0.4, 3), counter * CFrame.new(0, 3.7, 0), s.Trim.Color, s.Trim.Material)
+	Part(m, Vector3.new(1.8, 1.2, 1.2), counter * CFrame.new(2.6, 4.5, 0), rgb(200, 160, 70), M.Metal, { Name = "Till" })
+	Ball(m, 0.7, counter * CFrame.new(-2.8, 4.25, 0), rgb(255, 210, 90), M.Metal, { CanCollide = false })
+	for i = -1, 1 do
+		bottle(ctx, counter * CFrame.new(i * 1.1 - 0.3, 3.9, 0.3))
+	end
+	local candle = Part(m, Vector3.new(0.3, 0.9, 0.3), counter * CFrame.new(-4, 4.35, 0.6), rgb(250, 240, 220), M.SmoothPlastic, { CanCollide = false })
+	local flame = Part(m, Vector3.new(0.2, 0.35, 0.2), candle.CFrame * CFrame.new(0, 0.6, 0), rgb(255, 190, 90), M.Neon, { CanCollide = false })
+	BuildUtil.Light(flame, rgb(255, 170, 90), 8, 1)
+
+	-- Barrels by the left front corner
+	for i = 0, 1 do
+		Cylinder(m, 3, 2.6, L(-W / 2 + 2.8, FLOOR_Y + 1.5, -D / 2 + 3 + i * 3), rgb(120, 80, 50), M.Wood)
+		Cylinder(m, 0.3, 2.75, L(-W / 2 + 2.8, FLOOR_Y + 2.4, -D / 2 + 3 + i * 3), rgb(60, 60, 65), M.Metal)
+	end
+
+	-- Ceiling beams, hanging lanterns and drying herbs
+	for _, z in { -D / 4, 0, D / 4 } do
+		Part(m, Vector3.new(W - 2 * T, 0.8, 0.8), L(0, top - 0.4, z), s.Trim.Color, s.Trim.Material, { Name = "Beam" })
+	end
+	for _, p in { Vector3.new(-W / 4, 0, -D / 4), Vector3.new(W / 4, 0, -D / 4), Vector3.new(0, 0, D / 4) } do
+		Part(m, Vector3.new(0.15, 1.4, 0.15), L(p.X, top - 1.5, p.Z), WOOD_DARK, M.Metal, { CanCollide = false })
+		BuildUtil.Lantern(m, L(p.X, top - 3.2, p.Z), s.Light, nil, 22)
+	end
+	local herbColors = { rgb(90, 140, 70), rgb(120, 160, 80), rgb(140, 100, 170), rgb(170, 130, 70) }
+	local x = -W / 2 + 3
+	while x < W / 2 - 3 do
+		if math.abs(x) > 3.5 then
+			local color = herbColors[ctx.Rng:NextInteger(1, #herbColors)]
+			Part(m, Vector3.new(0.1, 0.8, 0.1), L(x, top - 1.2, 0), WOOD_DARK, M.SmoothPlastic, { CanCollide = false })
+			Part(m, Vector3.new(0.7, 1.6, 0.7), L(x, top - 2.4, 0), color, M.LeafyGrass, { CanCollide = false, CastShadow = false })
+		end
+		x += 2.4
+	end
+end
+
+--------------------------------------------------------------------------------
+-- Front yard: path, lamps and the shop sign
+--------------------------------------------------------------------------------
+
+local function buildYard(ctx, ownerName: string)
+	local s, m = ctx.Style, ctx.Model
+	local yard = ctx.PlotOrigin
+	local half = Config.PlotSize / 2
+	local doorZ = Config.HouseOffset - ctx.D / 2 - 2.4
+	local pathLength = doorZ + half
+	Part(m, Vector3.new(5, 0.3, pathLength), yard * CFrame.new(0, 0.15, -half + pathLength / 2), rgb(150, 140, 135), M.Cobblestone, { Name = "Path" })
+
+	for _, sx in { -1, 1 } do
+		BuildUtil.LampPost(m, yard * CFrame.new(sx * 5, 0, -half + 3))
+	end
+
+	-- Sign post beside the path
+	local signCF = yard * CFrame.new(-6.5, 0, doorZ - 6) * CFrame.Angles(0, math.rad(25), 0)
+	Cylinder(m, 4.6, 0.5, signCF * CFrame.new(-2.2, 2.3, 0), WOOD_DARK, M.Wood)
+	Cylinder(m, 4.6, 0.5, signCF * CFrame.new(2.2, 2.3, 0), WOOD_DARK, M.Wood)
+	local board = Part(m, Vector3.new(5.4, 2.6, 0.4), signCF * CFrame.new(0, 4, 0), s.Trim.Material == M.Neon and rgb(40, 45, 60) or s.Trim.Color, s.Trim.Material == M.Neon and M.Metal or s.Trim.Material, { Name = "ShopSign" })
+	local signText = string.format("%s\n%s's Potions", s.Emoji, ownerName)
+	BuildUtil.SurfaceText(board, Enum.NormalId.Front, signText, rgb(255, 235, 190))
+	BuildUtil.SurfaceText(board, Enum.NormalId.Back, signText, rgb(255, 235, 190))
+	if s.Features.Bows then
+		HouseBuilder.Bow(m, signCF * CFrame.new(0, 5.5, -0.3), s.Accent)
+	end
+
+	local sparkle = BuildUtil.Prompt(board, "Leave a Sparkle ✨", ownerName .. "'s Shop")
+	sparkle:SetAttribute("Audience", "Visitor")
+	local restyle = BuildUtil.Prompt(board, "Change Shop Style", "Your Shop")
+	restyle:SetAttribute("Audience", "Owner")
+	restyle.KeyboardKeyCode = Enum.KeyCode.R
+	restyle.GamepadKeyCode = Enum.KeyCode.ButtonY
+	ctx.Info.SparklePrompt = sparkle
+	ctx.Info.StylePrompt = restyle
+end
+
+--------------------------------------------------------------------------------
+-- Public API
+--------------------------------------------------------------------------------
+
+--[[
+	Builds a house for `owner` on the plot at `plotCFrame`.
+	Returns the Model (not yet parented) and an info table:
+	  SpawnCFrame, VisitCFrame, Door, Cauldron, SparklePrompt, StylePrompt,
+	  NameTitle, NameSubtitle
+]]
+function HouseBuilder.Build(style, plotCFrame: CFrame, owner: Player)
+	local model = Instance.new("Model")
+	model.Name = "House"
+
+	local ctx = {
+		Model = model,
+		Style = style,
+		W = style.Width,
+		D = style.Depth,
+		H = style.WallHeight,
+		WallTop = 1 + style.WallHeight,
+		PlotOrigin = plotCFrame * CFrame.new(0, 0.5, 0),
+		Origin = plotCFrame * CFrame.new(0, 0.5, Config.HouseOffset),
+		Rng = Random.new(owner.UserId + style.Order * 1000),
+		RoofRise = 0,
+		Info = {},
+	}
+
+	buildShell(ctx)
+	local roofTop = Roofs[style.Roof.Type](ctx)
+	for name, value in style.Features do
+		local feature = Features[name]
+		if feature then
+			feature(ctx, value)
+		else
+			warn("[HouseBuilder] Unknown feature", name, "in style", style.Id)
+		end
+	end
+	buildInterior(ctx)
+	buildYard(ctx, owner.DisplayName)
+
+	-- Floating name tag above the roof
+	local tagAnchor = Part(model, Vector3.new(1, 1, 1), ctx.Origin * CFrame.new(0, roofTop + 5, 0), rgb(0, 0, 0), M.SmoothPlastic, { Transparency = 1, CanCollide = false, CanQuery = false, Name = "NameTagAnchor" })
+	local _, title, subtitle = BuildUtil.Billboard(tagAnchor, owner.DisplayName .. "'s Potion Shop", style.Emoji .. " " .. style.DisplayName .. "  ·  ✨ 0")
+
+	local info = ctx.Info
+	info.Model = model
+	info.Style = style
+	info.NameTitle = title
+	info.NameSubtitle = subtitle
+	-- Owners appear inside, just behind the door, looking at the cauldron.
+	local spawnPos = Vector3.new(0, FLOOR_Y + 3.2, -ctx.D / 2 + 4)
+	info.SpawnCFrame = ctx.Origin * CFrame.lookAt(spawnPos, spawnPos + Vector3.new(0, 0, 1))
+	-- Visitors appear on the path, facing the front door.
+	local visitPos = Vector3.new(0, 3.5, -ctx.D / 2 - 8)
+	info.VisitCFrame = ctx.Origin * CFrame.lookAt(visitPos, visitPos + Vector3.new(0, 0, 1))
+
+	model.PrimaryPart = model:FindFirstChild("Foundation")
+	return model, info
+end
+
+return HouseBuilder
+]]></string>
+        </Properties>
+      </Item>
+      <Item class="Script" referent="9">
+        <Properties>
+          <string name="Name">Main</string>
+          <token name="RunContext">0</token>
+          <string name="Source"><![CDATA[--[[
+	Potion Town - server entry point (Phase 1: town, plots and shop styles)
+
+	1. Builds the world (lighting, terrain, plaza, plots, forest).
+	2. Gives every joining player a plot and builds their potion shop.
+	3. Spawns players inside their own shop.
+	4. Handles the style picker, the Visit/Home/Town buttons and the plaza props.
+]]
+
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+local Config = require(ReplicatedStorage.Shared.Config)
+local HouseStyles = require(ReplicatedStorage.Shared.HouseStyles)
+local WorldBuilder = require(script.Parent.WorldBuilder)
+local PlotService = require(script.Parent.PlotService)
+local PlayerData = require(script.Parent.PlayerData)
+local Remotes = require(script.Parent.Remotes)
+
+local world = WorldBuilder.Build()
+PlotService.Init(world.Plots)
+
+local function notify(player: Player, message: string)
+	Remotes.Notify:FireClient(player, message)
+end
+
+--------------------------------------------------------------------------------
+-- Plaza props
+--------------------------------------------------------------------------------
+
+for _, prompt in world.MarketPrompts do
+	prompt.Triggered:Connect(function(player)
+		notify(player, "🏪 The Town Market opens in a future update. Save up your coins!")
+	end)
+end
+
+local FORTUNES = {
+	"The well whispers: a rare ingredient grows where the fireflies gather...",
+	"The well whispers: your shop will be famous across the realm!",
+	"The well whispers: mix bravely, some mistakes become masterpieces.",
+	"The well whispers: a friend's shop holds a secret worth visiting.",
+}
+world.WellPrompt.Triggered:Connect(function(player)
+	world.WellSparkles:Emit(30)
+	notify(player, "🌟 " .. FORTUNES[math.random(1, #FORTUNES)])
+end)
+
+--------------------------------------------------------------------------------
+-- Player lifecycle
+--------------------------------------------------------------------------------
+
+local function placeCharacter(player: Player, character: Model)
+	character:WaitForChild("HumanoidRootPart", 10)
+	task.wait() -- let the default spawn finish before moving the character
+	local record = PlotService.Get(player)
+	if record and record.Info then
+		PlotService.TeleportToShop(player, record)
+	end
+end
+
+local function onPlayerAdded(player: Player)
+	-- Hook spawning first so we never miss the first character
+	player.CharacterAdded:Connect(function(character)
+		placeCharacter(player, character)
+	end)
+
+	local data = PlayerData.Load(player)
+	if not player.Parent then
+		return -- left while loading
+	end
+
+	local record = PlotService.Claim(player)
+	if record then
+		local style = HouseStyles.Get(data.Style) or HouseStyles.Get(Config.DefaultStyle)
+		PlotService.SetStyle(player, style)
+		if player.Character then
+			task.spawn(placeCharacter, player, player.Character)
+		end
+	else
+		notify(player, "All plots are taken in this town. You can still explore and visit shops!")
+	end
+
+	if record and not data.Style then
+		-- First visit ever: welcome them with the style picker
+		task.delay(2, function()
+			if player.Parent then
+				Remotes.OpenStylePicker:FireClient(player, true)
+			end
+		end)
+	end
+end
+
+Players.PlayerAdded:Connect(onPlayerAdded)
+for _, player in Players:GetPlayers() do
+	task.spawn(onPlayerAdded, player)
+end
+
+Players.PlayerRemoving:Connect(function(player)
+	PlotService.Release(player)
+	PlayerData.Release(player)
+end)
+
+--------------------------------------------------------------------------------
+-- Remotes
+--------------------------------------------------------------------------------
+
+local lastStyleChange: { [Player]: number } = {}
+Remotes.ChooseStyle.OnServerEvent:Connect(function(player, styleId)
+	if type(styleId) ~= "string" then
+		return
+	end
+	local style = HouseStyles.Get(styleId)
+	local record = PlotService.Get(player)
+	if not (style and record) then
+		return
+	end
+
+	local now = os.clock()
+	if lastStyleChange[player] and now - lastStyleChange[player] < Config.StyleChangeCooldown then
+		notify(player, "Give the builders a second... ⏳")
+		return
+	end
+	lastStyleChange[player] = now
+
+	PlayerData.Set(player, "Style", style.Id)
+	if record.Model:GetAttribute("StyleId") ~= style.Id then
+		PlotService.SetStyle(player, style)
+	end
+	PlotService.TeleportToShop(player, record)
+	notify(player, string.format("%s Welcome to your %s!", style.Emoji, style.DisplayName))
+end)
+
+local lastTeleport: { [Player]: number } = {}
+Remotes.RequestTeleport.OnServerEvent:Connect(function(player, target)
+	local now = os.clock()
+	if lastTeleport[player] and now - lastTeleport[player] < Config.TeleportCooldown then
+		return
+	end
+	lastTeleport[player] = now
+
+	local character = player.Character
+	if not character then
+		return
+	end
+
+	if target == "Town" then
+		character:PivotTo(Config.TownSpawn)
+	elseif target == "Home" then
+		local record = PlotService.Get(player)
+		if record then
+			PlotService.TeleportToShop(player, record)
+		end
+	elseif type(target) == "number" then
+		local record = PlotService.GetByUserId(target)
+		if record then
+			PlotService.TeleportToShop(player, record)
+			if record.Owner and record.Owner ~= player then
+				notify(record.Owner, player.DisplayName .. " is visiting your shop! 👋")
+			end
+		end
+	end
+end)
+
+Players.PlayerRemoving:Connect(function(player)
+	lastStyleChange[player] = nil
+	lastTeleport[player] = nil
+end)
+]]></string>
+        </Properties>
+      </Item>
+      <Item class="ModuleScript" referent="10">
+        <Properties>
+          <string name="Name">PlayerData</string>
+          <string name="Source"><![CDATA[--[[
+	PlayerData
+	Loads and saves each player's progress with DataStoreService.
+	Phase 1 saves the chosen shop style and sparkle count. Later phases add
+	coins, unlocked recipes, upgrades and items to DEFAULTS.
+
+	In Studio, saving only works if "Enable Studio Access to API Services" is
+	turned on (Game Settings > Security). Without it the game still runs, it
+	just doesn't remember anything.
+]]
+
+local DataStoreService = game:GetService("DataStoreService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+local Config = require(ReplicatedStorage.Shared.Config)
+
+local DEFAULTS = {
+	Version = 1,
+	Style = nil, -- nil until the player picks a style (shows the welcome picker)
+	Sparkles = 0,
+}
+
+local PlayerData = {}
+
+local store: DataStore? = nil
+do
+	local ok, result = pcall(DataStoreService.GetDataStore, DataStoreService, Config.DataStoreName)
+	if ok then
+		store = result
+	else
+		warn("[PlayerData] DataStores unavailable, progress will not save:", result)
+	end
+end
+
+local cache: { [Player]: { [string]: any } } = {}
+local loadFailed: { [Player]: boolean } = {}
+
+local function key(player: Player)
+	return "player_" .. player.UserId
+end
+
+local function withRetries(callback)
+	for attempt = 1, 3 do
+		local ok, result = pcall(callback)
+		if ok then
+			return true, result
+		end
+		warn(string.format("[PlayerData] attempt %d failed: %s", attempt, tostring(result)))
+		if string.find(tostring(result), "Studio", 1, true) then
+			-- Studio without API access: stop trying for the rest of the session
+			store = nil
+			break
+		end
+		task.wait(attempt)
+	end
+	return false, nil
+end
+
+function PlayerData.Load(player: Player)
+	local data = table.clone(DEFAULTS)
+	if store then
+		local ok, saved = withRetries(function()
+			return (store :: DataStore):GetAsync(key(player))
+		end)
+		if ok and type(saved) == "table" then
+			for k, v in saved do
+				data[k] = v
+			end
+		elseif not ok then
+			-- Never overwrite real progress with defaults after a failed load
+			loadFailed[player] = true
+		end
+	end
+	cache[player] = data
+	return data
+end
+
+function PlayerData.Get(player: Player)
+	return cache[player]
+end
+
+function PlayerData.Set(player: Player, field: string, value: any)
+	local data = cache[player]
+	if data then
+		data[field] = value
+	end
+end
+
+function PlayerData.Save(player: Player)
+	local data = cache[player]
+	if not (store and data) or loadFailed[player] then
+		return
+	end
+	local snapshot = table.clone(data)
+	withRetries(function()
+		(store :: DataStore):SetAsync(key(player), snapshot, { player.UserId })
+	end)
+end
+
+function PlayerData.Release(player: Player)
+	PlayerData.Save(player)
+	cache[player] = nil
+	loadFailed[player] = nil
+end
+
+game:BindToClose(function()
+	local pending = 0
+	for player in cache do
+		pending += 1
+		task.spawn(function()
+			PlayerData.Save(player)
+			pending -= 1
+		end)
+	end
+	local started = os.clock()
+	while pending > 0 and os.clock() - started < 20 do
+		task.wait(0.2)
+	end
+end)
+
+return PlayerData
+]]></string>
+        </Properties>
+      </Item>
+      <Item class="ModuleScript" referent="11">
+        <Properties>
+          <string name="Name">PlotService</string>
+          <string name="Source"><![CDATA[--[[
+	PlotService
+	Hands out plots to players as they join, builds their shop in the style
+	they picked, wires up the shop's interactive bits, and frees the plot
+	when they leave.
+
+	Each plot Model carries attributes the client reads for the Visit menu:
+	  OwnerUserId, OwnerName, StyleId
+]]
+
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local TweenService = game:GetService("TweenService")
+
+local Config = require(ReplicatedStorage.Shared.Config)
+local HouseBuilder = require(script.Parent.HouseBuilder)
+local PlayerData = require(script.Parent.PlayerData)
+local Remotes = require(script.Parent.Remotes)
+
+local PlotService = {}
+
+type PlotRecord = {
+	Index: number,
+	Model: Model,
+	CFrame: CFrame,
+	ForSaleSign: Instance?,
+	Owner: Player?,
+	House: Model?,
+	Info: { [string]: any }?,
+	SparkledBy: { [number]: boolean },
+}
+
+local records: { PlotRecord } = {}
+local byPlayer: { [Player]: PlotRecord } = {}
+
+local function notify(player: Player, message: string)
+	Remotes.Notify:FireClient(player, message)
+end
+
+local function updateNameTag(record: PlotRecord)
+	local info = record.Info
+	if not (info and record.Owner) then
+		return
+	end
+	local data = PlayerData.Get(record.Owner)
+	local sparkles = data and data.Sparkles or 0
+	info.NameSubtitle.Text = string.format("%s %s  ·  ✨ %d", info.Style.Emoji, info.Style.DisplayName, sparkles)
+end
+
+local function sparkleBurst(part: BasePart)
+	local emitter = Instance.new("ParticleEmitter")
+	emitter.Color = ColorSequence.new(Color3.fromRGB(255, 230, 140), Color3.fromRGB(255, 150, 230))
+	emitter.LightEmission = 1
+	emitter.Size = NumberSequence.new(0.5, 0)
+	emitter.Lifetime = NumberRange.new(0.8, 1.6)
+	emitter.Speed = NumberRange.new(6, 12)
+	emitter.SpreadAngle = Vector2.new(180, 180)
+	emitter.Rate = 0
+	emitter.Parent = part
+	emitter:Emit(40)
+	task.delay(2, emitter.Destroy, emitter)
+end
+
+-- Connects the door, cauldron and shop sign of a freshly built house.
+local function attachInteractions(record: PlotRecord)
+	local info = record.Info :: { [string]: any }
+	local owner = record.Owner :: Player
+
+	-- Door: starts open so visitors can wander in; anyone can open/close it.
+	local door = info.Door
+	local isOpen = true
+	door.Part.CFrame = door.Open
+	local doorPrompt = Instance.new("ProximityPrompt")
+	doorPrompt.ActionText = "Close"
+	doorPrompt.ObjectText = "Door"
+	doorPrompt.RequiresLineOfSight = false
+	doorPrompt.MaxActivationDistance = 8
+	doorPrompt.Parent = door.Part
+	doorPrompt.Triggered:Connect(function()
+		isOpen = not isOpen
+		doorPrompt.ActionText = isOpen and "Close" or "Open"
+		TweenService:Create(door.Part, TweenInfo.new(0.45, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+			CFrame = isOpen and door.Open or door.Closed,
+		}):Play()
+	end)
+
+	-- Cauldron: stirring makes it bubble up in a random potion colour.
+	-- (Real brewing with ingredients arrives in Phase 2.)
+	local cauldron = info.Cauldron
+	local stirring = false
+	cauldron.Prompt.Triggered:Connect(function(player)
+		if stirring then
+			return
+		end
+		stirring = true
+		local color = cauldron.BaseColor
+		while color == cauldron.BaseColor do
+			color = Config.PotionColors[math.random(1, #Config.PotionColors)]
+		end
+		local tweenInfo = TweenInfo.new(0.6)
+		TweenService:Create(cauldron.Liquid, tweenInfo, { Color = color }):Play()
+		TweenService:Create(cauldron.Light, tweenInfo, { Color = color }):Play()
+		cauldron.Bubbles.Color = ColorSequence.new(color)
+		cauldron.Bubbles:Emit(45)
+		if player == owner then
+			notify(player, "The brew shimmers... gather ingredients to brew real potions soon! 🧪")
+		end
+		task.delay(4, function()
+			if not cauldron.Liquid.Parent then
+				return
+			end
+			TweenService:Create(cauldron.Liquid, tweenInfo, { Color = cauldron.BaseColor }):Play()
+			TweenService:Create(cauldron.Light, tweenInfo, { Color = cauldron.BaseColor }):Play()
+			cauldron.Bubbles.Color = ColorSequence.new(cauldron.BaseColor)
+			stirring = false
+		end)
+	end)
+
+	-- Shop sign: visitors leave a sparkle, the owner can restyle.
+	info.SparklePrompt:SetAttribute("OwnerUserId", owner.UserId)
+	info.StylePrompt:SetAttribute("OwnerUserId", owner.UserId)
+
+	info.SparklePrompt.Triggered:Connect(function(player)
+		if player == owner then
+			return
+		end
+		if record.SparkledBy[player.UserId] then
+			notify(player, "You already left a sparkle here this visit ✨")
+			return
+		end
+		record.SparkledBy[player.UserId] = true
+		local data = PlayerData.Get(owner)
+		if data then
+			data.Sparkles += 1
+		end
+		updateNameTag(record)
+		sparkleBurst(info.SparklePrompt.Parent)
+		notify(player, "You left a sparkle for " .. owner.DisplayName .. "'s shop! ✨")
+		notify(owner, player.DisplayName .. " left a sparkle on your shop! ✨")
+	end)
+
+	info.StylePrompt.Triggered:Connect(function(player)
+		if player == owner then
+			Remotes.OpenStylePicker:FireClient(player, false)
+		end
+	end)
+end
+
+local function rootPart(player: Player): BasePart?
+	local character = player.Character
+	return character and character:FindFirstChild("HumanoidRootPart") :: BasePart?
+end
+
+function PlotService.Init(plotModels: { Model })
+	for index, model in plotModels do
+		records[index] = {
+			Index = index,
+			Model = model,
+			CFrame = Config.GetPlotCFrame(index),
+			ForSaleSign = model:FindFirstChild("ForSaleSign"),
+			Owner = nil,
+			House = nil,
+			Info = nil,
+			SparkledBy = {},
+		}
+	end
+end
+
+function PlotService.Claim(player: Player): PlotRecord?
+	if byPlayer[player] then
+		return byPlayer[player]
+	end
+	for _, record in records do
+		if not record.Owner then
+			record.Owner = player
+			byPlayer[player] = record
+			if record.ForSaleSign then
+				record.ForSaleSign.Parent = nil
+			end
+			record.Model:SetAttribute("OwnerUserId", player.UserId)
+			record.Model:SetAttribute("OwnerName", player.DisplayName)
+			return record
+		end
+	end
+	return nil
+end
+
+function PlotService.Get(player: Player): PlotRecord?
+	return byPlayer[player]
+end
+
+function PlotService.GetByUserId(userId: number): PlotRecord?
+	for _, record in records do
+		if record.Owner and record.Owner.UserId == userId then
+			return record
+		end
+	end
+	return nil
+end
+
+-- Builds (or rebuilds) the player's shop in the given style.
+function PlotService.SetStyle(player: Player, style)
+	local record = byPlayer[player]
+	if not record then
+		return
+	end
+
+	-- Remember who is standing in or near the old house so nobody ends up
+	-- stuck inside a wall after the rebuild.
+	local nearby = {}
+	local centre = record.CFrame.Position
+	for _, other in Players:GetPlayers() do
+		local root = rootPart(other)
+		if root and (root.Position - centre).Magnitude < Config.PlotSize * 0.75 then
+			table.insert(nearby, other)
+		end
+	end
+
+	if record.House then
+		record.House:Destroy()
+	end
+	local model, info = HouseBuilder.Build(style, record.CFrame, player)
+	model.Parent = record.Model
+	record.House = model
+	record.Info = info
+	record.Model:SetAttribute("StyleId", style.Id)
+	attachInteractions(record)
+	updateNameTag(record)
+
+	for _, other in nearby do
+		PlotService.TeleportToShop(other, record)
+	end
+end
+
+-- Owners land inside their shop; visitors land on the path outside the door.
+function PlotService.TeleportToShop(player: Player, record: PlotRecord)
+	local character = player.Character
+	local info = record.Info
+	if not (character and info) then
+		return
+	end
+	local target = (record.Owner == player) and info.SpawnCFrame or info.VisitCFrame
+	character:PivotTo(target)
+end
+
+function PlotService.Release(player: Player)
+	local record = byPlayer[player]
+	if not record then
+		return
+	end
+	byPlayer[player] = nil
+	if record.House then
+		record.House:Destroy()
+	end
+	record.Owner = nil
+	record.House = nil
+	record.Info = nil
+	record.SparkledBy = {}
+	record.Model:SetAttribute("OwnerUserId", nil)
+	record.Model:SetAttribute("OwnerName", nil)
+	record.Model:SetAttribute("StyleId", nil)
+	if record.ForSaleSign then
+		record.ForSaleSign.Parent = record.Model
+	end
+end
+
+return PlotService
+]]></string>
+        </Properties>
+      </Item>
+      <Item class="ModuleScript" referent="12">
+        <Properties>
+          <string name="Name">Remotes</string>
+          <string name="Source"><![CDATA[--[[
+	Remotes
+	Creates the RemoteEvents the client and server talk through.
+	The client waits for ReplicatedStorage.Remotes.<Name>.
+]]
+
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+local folder = ReplicatedStorage:FindFirstChild("Remotes")
+if not folder then
+	folder = Instance.new("Folder")
+	folder.Name = "Remotes"
+	folder.Parent = ReplicatedStorage
+end
+
+local function event(name: string): RemoteEvent
+	local remote = folder:FindFirstChild(name)
+	if not remote then
+		remote = Instance.new("RemoteEvent")
+		remote.Name = name
+		remote.Parent = folder
+	end
+	return remote
+end
+
+return {
+	ChooseStyle = event("ChooseStyle"), -- client -> server: (styleId)
+	RequestTeleport = event("RequestTeleport"), -- client -> server: ("Home" | "Town" | ownerUserId)
+	OpenStylePicker = event("OpenStylePicker"), -- server -> client: (isFirstVisit)
+	Notify = event("Notify"), -- server -> client: (message)
+}
+]]></string>
+        </Properties>
+      </Item>
+      <Item class="ModuleScript" referent="13">
+        <Properties>
+          <string name="Name">WorldBuilder</string>
+          <string name="Source"><![CDATA[--[[
+	WorldBuilder
+	Builds Potion Town when the server starts:
+	  - golden-hour lighting with soft fog and bloom (the cosy, glowy look)
+	  - grass terrain with a pond
+	  - the central plaza with the Town Market pavilion (shop opens in Phase 5)
+	  - a ring of empty plots, each linked to the plaza by a cobblestone path
+	  - the enchanted forest around the town (ingredients arrive in Phase 2)
+]]
+
+local Lighting = game:GetService("Lighting")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+local Config = require(ReplicatedStorage.Shared.Config)
+local BuildUtil = require(script.Parent.BuildUtil)
+
+local Part = BuildUtil.Part
+local Cylinder = BuildUtil.Cylinder
+local Ball = BuildUtil.Ball
+local M = Enum.Material
+local rgb = Color3.fromRGB
+
+local WorldBuilder = {}
+
+local function ensure(parent: Instance, className: string, name: string)
+	local existing = parent:FindFirstChild(name)
+	if existing then
+		existing:Destroy()
+	end
+	local instance = Instance.new(className)
+	instance.Name = name
+	instance.Parent = parent
+	return instance
+end
+
+local function setupLighting()
+	Lighting.ClockTime = 18.1
+	Lighting.GeographicLatitude = 30
+	Lighting.Brightness = 2.2
+	Lighting.Ambient = rgb(70, 55, 85)
+	Lighting.OutdoorAmbient = rgb(125, 105, 135)
+	Lighting.EnvironmentDiffuseScale = 0.6
+	Lighting.EnvironmentSpecularScale = 0.6
+	Lighting.GlobalShadows = true
+	Lighting.ShadowSoftness = 0.3
+
+	local atmosphere = ensure(Lighting, "Atmosphere", "PotionTownAtmosphere")
+	atmosphere.Density = 0.33
+	atmosphere.Offset = 0.15
+	atmosphere.Color = rgb(205, 175, 215)
+	atmosphere.Decay = rgb(110, 80, 125)
+	atmosphere.Glare = 0.35
+	atmosphere.Haze = 1.6
+
+	local bloom = ensure(Lighting, "BloomEffect", "PotionTownBloom")
+	bloom.Intensity = 0.7
+	bloom.Size = 30
+	bloom.Threshold = 1.4
+
+	local color = ensure(Lighting, "ColorCorrectionEffect", "PotionTownColor")
+	color.Saturation = 0.12
+	color.Contrast = 0.08
+	color.TintColor = rgb(255, 242, 232)
+
+	local rays = ensure(Lighting, "SunRaysEffect", "PotionTownSunRays")
+	rays.Intensity = 0.06
+	rays.Spread = 0.6
+end
+
+local function setupTerrain()
+	local terrain = workspace.Terrain
+	terrain:Clear()
+	local size = Config.WorldHalfSize * 2 + 80
+	terrain:FillBlock(CFrame.new(0, -10, 0), Vector3.new(size, 20, size), M.Grass)
+	terrain:SetMaterialColor(M.Grass, rgb(82, 112, 60))
+	terrain:SetMaterialColor(M.LeafyGrass, rgb(66, 98, 52))
+
+	-- Darker, leafy ground under the forest
+	local ring = (Config.ForestInnerRadius + Config.ForestOuterRadius) / 2
+	for i = 0, 23 do
+		local a = i / 24 * math.pi * 2
+		terrain:FillCylinder(CFrame.new(math.cos(a) * ring, -0.5, math.sin(a) * ring), 1, 70, M.LeafyGrass)
+	end
+
+	-- A pond between two plots, out in the forest edge
+	local pondAngle = math.pi / Config.MaxPlots
+	local pond = Vector3.new(math.cos(pondAngle), 0, math.sin(pondAngle)) * 270
+	terrain:FillCylinder(CFrame.new(pond + Vector3.new(0, -3, 0)), 6, 22, M.Water)
+	return pond
+end
+
+local function boundaryWalls(folder: Folder)
+	local h = Config.WorldHalfSize
+	for _, data in {
+		{ Vector3.new(0, 50, h), Vector3.new(h * 2, 100, 2) },
+		{ Vector3.new(0, 50, -h), Vector3.new(h * 2, 100, 2) },
+		{ Vector3.new(h, 50, 0), Vector3.new(2, 100, h * 2) },
+		{ Vector3.new(-h, 50, 0), Vector3.new(2, 100, h * 2) },
+	} do
+		Part(folder, data[2], CFrame.new(data[1]), rgb(0, 0, 0), M.SmoothPlastic, { Transparency = 1, Name = "Boundary", CanQuery = false })
+	end
+end
+
+--------------------------------------------------------------------------------
+-- Plaza and Town Market
+--------------------------------------------------------------------------------
+
+local function buildMarket(folder: Folder)
+	local market = Instance.new("Model")
+	market.Name = "TownMarket"
+	market.Parent = folder
+
+	local purple, deepPurple, gold = rgb(95, 60, 140), rgb(60, 38, 95), rgb(230, 185, 80)
+	local marble = rgb(225, 215, 230)
+
+	Cylinder(market, 1.2, 36, CFrame.new(0, 0.6, 0), marble, M.Marble, { Name = "MarketFloor" })
+	Cylinder(market, 0.6, 38, CFrame.new(0, 0.3, 0), gold, M.Marble)
+
+	-- Pillars, a ring beam and a tall tiered roof
+	for i = 0, 7 do
+		local a = i / 8 * math.pi * 2
+		local p = CFrame.new(math.cos(a) * 16, 0, math.sin(a) * 16)
+		Cylinder(market, 16, 2, p * CFrame.new(0, 9.2, 0), marble, M.Marble)
+		Cylinder(market, 0.8, 3, p * CFrame.new(0, 1.6, 0), gold, M.Metal)
+		Cylinder(market, 0.8, 3, p * CFrame.new(0, 16.8, 0), gold, M.Metal)
+		local lantern = p * CFrame.new(0, 14, 0) * CFrame.new(-math.cos(a) * 1.6, 0, -math.sin(a) * 1.6)
+		BuildUtil.Lantern(market, lantern, rgb(255, 185, 120), gold, 18)
+	end
+	Cylinder(market, 1.5, 36, CFrame.new(0, 17.95, 0), deepPurple, M.Slate)
+	local tiers = BuildUtil.Tiered(market, CFrame.new(0, 18.7, 0), 20, 16, 12, BuildUtil.ConeProfile, purple, M.RoofShingles)
+	for i, tier in tiers do
+		if i % 2 == 0 then
+			tier.Part.Color = deepPurple
+		end
+	end
+	Cylinder(market, 3, 0.6, CFrame.new(0, 36, 0), gold, M.Metal)
+	local star = Ball(market, 2.4, CFrame.new(0, 38.2, 0), rgb(255, 220, 120), M.Neon, { CanCollide = false })
+	BuildUtil.Light(star, rgb(255, 210, 120), 30, 2)
+
+	-- Giant bubbling cauldron in the middle
+	local cauldron = CFrame.new(0, 1.2, 0)
+	for i, r in { 3, 4, 4.5, 4.6, 4.4 } do
+		Cylinder(market, 1, r * 2, cauldron * CFrame.new(0, 0.5 + (i - 1), 0), rgb(38, 36, 42), M.Metal)
+	end
+	Cylinder(market, 0.5, 9.6, cauldron * CFrame.new(0, 5.25, 0), rgb(60, 55, 65), M.Metal)
+	Cylinder(market, 0.2, 8, cauldron * CFrame.new(0, 5.5, 0), rgb(170, 90, 255), M.Neon, { CanCollide = false })
+	local fx = Part(market, Vector3.new(6, 0.2, 6), cauldron * CFrame.new(0, 5.9, 0), rgb(0, 0, 0), M.SmoothPlastic, { Transparency = 1, CanCollide = false, CanQuery = false })
+	BuildUtil.Light(fx, rgb(180, 110, 255), 24, 2.5, true)
+	local fumes = Instance.new("ParticleEmitter")
+	fumes.Color = ColorSequence.new(rgb(190, 120, 255), rgb(120, 220, 255))
+	fumes.LightEmission = 0.8
+	fumes.Transparency = NumberSequence.new({ NumberSequenceKeypoint.new(0, 0.3), NumberSequenceKeypoint.new(1, 1) })
+	fumes.Size = NumberSequence.new({ NumberSequenceKeypoint.new(0, 1), NumberSequenceKeypoint.new(1, 3) })
+	fumes.Lifetime = NumberRange.new(2, 4)
+	fumes.Speed = NumberRange.new(3, 5)
+	fumes.Rate = 14
+	fumes.SpreadAngle = Vector2.new(20, 20)
+	fumes.Parent = fx
+
+	-- Four market stalls facing outwards
+	local prompts = {}
+	for i = 0, 3 do
+		local a = i / 4 * math.pi * 2 + math.pi / 4
+		local outward = Vector3.new(math.cos(a), 0, math.sin(a))
+		local base = CFrame.lookAt(outward * 10 + Vector3.new(0, 1.2, 0), outward * 20 + Vector3.new(0, 1.2, 0))
+		Part(market, Vector3.new(8, 3.4, 2.4), base * CFrame.new(0, 1.7, 0), rgb(95, 62, 40), M.WoodPlanks)
+		Part(market, Vector3.new(8.6, 0.4, 3), base * CFrame.new(0, 3.6, 0), gold, M.Wood)
+		local rng = Random.new(i + 10)
+		for b = -3, 3 do
+			local color = Config.PotionColors[rng:NextInteger(1, #Config.PotionColors)]
+			Cylinder(market, rng:NextNumber(0.9, 1.6), 0.7, base * CFrame.new(b, 4.4, 0), color, M.Neon, { CanCollide = false })
+		end
+		local prompt = BuildUtil.Prompt(Part(market, Vector3.new(8, 3.4, 0.2), base * CFrame.new(0, 1.7, -1.3), rgb(0, 0, 0), M.SmoothPlastic, { Transparency = 1, CanCollide = false }), "Browse", "Town Market")
+		table.insert(prompts, prompt)
+	end
+
+	local anchor = Part(market, Vector3.one, CFrame.new(0, 44, 0), rgb(0, 0, 0), M.SmoothPlastic, { Transparency = 1, CanCollide = false, CanQuery = false })
+	BuildUtil.Billboard(anchor, "✦ Town Market ✦", "Shop decor & rare items · opening soon", 400)
+	return prompts
+end
+
+local function buildWishingWell(folder: Folder, cf: CFrame)
+	local well = Instance.new("Model")
+	well.Name = "WishingWell"
+	well.Parent = folder
+	local stone = rgb(140, 135, 145)
+	for i = 0, 11 do
+		local a = i / 12 * math.pi * 2
+		Part(well, Vector3.new(2.2, 3, 1.2), cf * CFrame.new(math.cos(a) * 4, 1.5, math.sin(a) * 4) * CFrame.Angles(0, -a + math.pi / 2, 0), stone, M.Cobblestone)
+	end
+	local water = Cylinder(well, 0.2, 7, cf * CFrame.new(0, 2.2, 0), rgb(90, 220, 255), M.Neon, { CanCollide = false })
+	BuildUtil.Light(water, rgb(90, 220, 255), 14, 1.6)
+	for _, sx in { -1, 1 } do
+		Part(well, Vector3.new(0.6, 7, 0.6), cf * CFrame.new(sx * 4, 4.5, 0), rgb(90, 60, 40), M.Wood)
+	end
+	local roof = cf * CFrame.new(0, 8.6, 0)
+	Part(well, Vector3.new(10, 0.5, 4), roof * CFrame.new(0, 0, -1.4) * CFrame.Angles(math.rad(30), 0, 0), rgb(120, 60, 60), M.ClayRoofTiles)
+	Part(well, Vector3.new(10, 0.5, 4), roof * CFrame.new(0, 0, 1.4) * CFrame.Angles(math.rad(-30), 0, 0), rgb(120, 60, 60), M.ClayRoofTiles)
+
+	local sparkles = Instance.new("ParticleEmitter")
+	sparkles.Name = "WishSparkles"
+	sparkles.Color = ColorSequence.new(rgb(255, 230, 140), rgb(150, 230, 255))
+	sparkles.LightEmission = 1
+	sparkles.Size = NumberSequence.new(0.4, 0)
+	sparkles.Lifetime = NumberRange.new(1, 2)
+	sparkles.Speed = NumberRange.new(4, 8)
+	sparkles.SpreadAngle = Vector2.new(35, 35)
+	sparkles.Rate = 2
+	sparkles.EmissionDirection = Enum.NormalId.Right -- upwards on an upright cylinder
+	sparkles.Parent = water
+
+	return BuildUtil.Prompt(water, "Make a Wish", "Wishing Well", 0.5), sparkles
+end
+
+local function buildPlaza(folder: Folder)
+	local r = Config.PlazaRadius
+	Cylinder(folder, 0.4, r * 2, CFrame.new(0, 0.2, 0), rgb(160, 150, 145), M.Cobblestone, { Name = "Plaza" })
+	Cylinder(folder, 0.3, r * 2 + 3, CFrame.new(0, 0.15, 0), rgb(110, 100, 105), M.Slate)
+
+	for i = 0, 11 do
+		local a = (i + 0.5) / 12 * math.pi * 2
+		BuildUtil.LampPost(folder, CFrame.new(math.cos(a) * (r - 3), 0.4, math.sin(a) * (r - 3)))
+	end
+
+	-- Flower beds around the inner plaza
+	local flowers = { rgb(255, 140, 190), rgb(200, 150, 255), rgb(255, 210, 110), rgb(140, 220, 255) }
+	local rng = Random.new(7)
+	for i = 0, 7 do
+		local a = i / 8 * math.pi * 2 + math.pi / 8
+		local bed = CFrame.new(math.cos(a) * 27, 0.4, math.sin(a) * 27) * CFrame.Angles(0, -a, 0)
+		Part(folder, Vector3.new(4, 1, 9), bed * CFrame.new(0, 0.5, 0), rgb(110, 80, 60), M.Wood)
+		Part(folder, Vector3.new(3.4, 0.2, 8.4), bed * CFrame.new(0, 1.05, 0), rgb(80, 55, 40), M.Mud)
+		for _ = 1, 6 do
+			Ball(folder, 0.9, bed * CFrame.new(rng:NextNumber(-1.3, 1.3), 1.5, rng:NextNumber(-3.6, 3.6)), flowers[rng:NextInteger(1, #flowers)], M.SmoothPlastic, { CanCollide = false })
+		end
+	end
+
+	local marketPrompts = buildMarket(folder)
+	local wellAngle = math.pi * 2 * (Config.MaxPlots - 0.5) / Config.MaxPlots
+	local wellPrompt, wellSparkles = buildWishingWell(folder, CFrame.new(math.cos(wellAngle) * 34, 0.4, math.sin(wellAngle) * 34))
+
+	local townSpawn = Instance.new("SpawnLocation")
+	townSpawn.Name = "TownSpawn"
+	townSpawn.Anchored = true
+	townSpawn.Neutral = true
+	townSpawn.Size = Vector3.new(6, 0.2, 6)
+	townSpawn.CFrame = CFrame.new(Config.TownSpawn.Position.X, 0.5, Config.TownSpawn.Position.Z)
+	townSpawn.Transparency = 1
+	townSpawn.CanCollide = false
+	townSpawn.Duration = 0
+	townSpawn.Parent = folder
+
+	return marketPrompts, wellPrompt, wellSparkles
+end
+
+--------------------------------------------------------------------------------
+-- Plots and paths
+--------------------------------------------------------------------------------
+
+local function buildPlot(folder: Folder, index: number)
+	local cf = Config.GetPlotCFrame(index)
+	local size = Config.PlotSize
+	local plot = Instance.new("Model")
+	plot.Name = "Plot" .. index
+	plot:SetAttribute("PlotIndex", index)
+	plot.Parent = folder
+
+	local base = Part(plot, Vector3.new(size, 1, size), cf, rgb(96, 128, 70), M.Grass, { Name = "Base" })
+	plot.PrimaryPart = base
+	-- low stone border (gap at the front for the path)
+	local border = rgb(130, 122, 128)
+	local h = size / 2
+	Part(plot, Vector3.new(size + 1, 0.8, 1), cf * CFrame.new(0, 0.6, h), border, M.Cobblestone)
+	Part(plot, Vector3.new(1, 0.8, size + 1), cf * CFrame.new(-h, 0.6, 0), border, M.Cobblestone)
+	Part(plot, Vector3.new(1, 0.8, size + 1), cf * CFrame.new(h, 0.6, 0), border, M.Cobblestone)
+	for _, sx in { -1, 1 } do
+		Part(plot, Vector3.new(h - 4, 0.8, 1), cf * CFrame.new(sx * (h + 4) / 2, 0.6, -h), border, M.Cobblestone)
+	end
+
+	-- "For sale" sign shown while nobody owns the plot
+	local sign = Instance.new("Model")
+	sign.Name = "ForSaleSign"
+	sign.Parent = plot
+	local signCF = cf * CFrame.new(0, 0.5, -6)
+	Cylinder(sign, 5, 0.5, signCF * CFrame.new(0, 2.5, 0), rgb(90, 60, 40), M.Wood)
+	local board = Part(sign, Vector3.new(6, 3, 0.4), signCF * CFrame.new(0, 5, 0), rgb(120, 85, 55), M.WoodPlanks)
+	BuildUtil.SurfaceText(board, Enum.NormalId.Front, "✦ Empty Plot ✦\nWaiting for a potion maker", rgb(255, 235, 190))
+	local glow = Part(sign, Vector3.new(4, 0.2, 4), signCF * CFrame.new(0, 0.1, 0), rgb(170, 90, 255), M.Neon, { CanCollide = false, Transparency = 0.4 })
+	glow.Name = "Glow"
+	return plot
+end
+
+local function buildPath(folder: Folder, index: number)
+	local plotCF = Config.GetPlotCFrame(index)
+	local from = Config.PlazaRadius - 1
+	local to = Config.PlotRingRadius - Config.PlotSize / 2
+	local length = to - from
+	local direction = plotCF.Position.Unit
+	local mid = direction * (from + length / 2)
+	local cf = CFrame.lookAt(mid, mid + direction) * CFrame.new(0, 0.2, 0)
+	Part(folder, Vector3.new(7, 0.4, length), cf, rgb(150, 140, 135), M.Cobblestone, { Name = "Path" })
+	Part(folder, Vector3.new(9, 0.3, length), cf * CFrame.new(0, -0.08, 0), rgb(110, 100, 90), M.Pebble)
+end
+
+--------------------------------------------------------------------------------
+-- Enchanted forest
+--------------------------------------------------------------------------------
+
+local LEAVES = { rgb(60, 110, 55), rgb(75, 125, 60), rgb(50, 95, 60), rgb(90, 130, 65) }
+local MAGIC_LEAVES = { rgb(140, 90, 200), rgb(80, 160, 170), rgb(200, 110, 170) }
+
+local function tree(folder, rng: Random, pos: Vector3)
+	local magic = rng:NextNumber() < 0.15
+	local height = rng:NextNumber(10, 20)
+	local trunkD = rng:NextNumber(1.6, 2.8)
+	local base = CFrame.new(pos) * CFrame.Angles(0, rng:NextNumber(0, math.pi * 2), 0)
+	Cylinder(folder, height, trunkD, base * CFrame.new(0, height / 2 - 0.5, 0), rgb(85, 60, 45), M.Wood)
+
+	if not magic and rng:NextNumber() < 0.4 then
+		-- pine
+		for i = 0, 3 do
+			local r = (4 - i) * 2.2 + 1
+			Cylinder(folder, 3, r * 2, base * CFrame.new(0, height - 3 + i * 3, 0), rgb(45, 90, 60), M.LeafyGrass)
+		end
+		return
+	end
+
+	local palette = magic and MAGIC_LEAVES or LEAVES
+	for _ = 1, 3 do
+		local offset = Vector3.new(rng:NextNumber(-3, 3), rng:NextNumber(-1, 3), rng:NextNumber(-3, 3))
+		Ball(folder, rng:NextNumber(8, 12), base * CFrame.new(Vector3.new(0, height, 0) + offset), palette[rng:NextInteger(1, #palette)], M.LeafyGrass, { CastShadow = true })
+	end
+	if magic then
+		for _ = 1, 4 do
+			local fruit = Ball(folder, 0.9, base * CFrame.new(rng:NextNumber(-4, 4), height + rng:NextNumber(-4, 0), rng:NextNumber(-4, 4)), rgb(255, 220, 120), M.Neon, { CanCollide = false })
+			fruit.Name = "GlowFruit"
+		end
+	end
+end
+
+local function mushroom(folder, rng: Random, pos: Vector3, withLight: boolean)
+	local colors = { rgb(120, 230, 255), rgb(200, 120, 255), rgb(255, 140, 200), rgb(140, 255, 170) }
+	local color = colors[rng:NextInteger(1, #colors)]
+	local h = rng:NextNumber(1.2, 3)
+	Cylinder(folder, h, 0.6, CFrame.new(pos + Vector3.new(0, h / 2, 0)), rgb(240, 235, 220), M.SmoothPlastic, { CanCollide = false })
+	local cap = Cylinder(folder, 0.6, h * 1.4, CFrame.new(pos + Vector3.new(0, h, 0)), color, M.Neon, { CanCollide = false })
+	if withLight then
+		BuildUtil.Light(cap, color, 10, 1.2)
+	end
+end
+
+local function fireflies(folder, pos: Vector3)
+	local holder = Part(folder, Vector3.new(30, 8, 30), CFrame.new(pos + Vector3.new(0, 5, 0)), rgb(0, 0, 0), M.SmoothPlastic, { Transparency = 1, CanCollide = false, CanQuery = false, Name = "Fireflies" })
+	local emitter = Instance.new("ParticleEmitter")
+	emitter.Shape = Enum.ParticleEmitterShape.Box
+	emitter.Color = ColorSequence.new(rgb(220, 255, 140))
+	emitter.LightEmission = 1
+	emitter.Size = NumberSequence.new({ NumberSequenceKeypoint.new(0, 0), NumberSequenceKeypoint.new(0.2, 0.25), NumberSequenceKeypoint.new(0.8, 0.25), NumberSequenceKeypoint.new(1, 0) })
+	emitter.Lifetime = NumberRange.new(4, 7)
+	emitter.Speed = NumberRange.new(0.3, 1)
+	emitter.SpreadAngle = Vector2.new(180, 180)
+	emitter.Rate = 4
+	emitter.Parent = holder
+end
+
+local function buildForest(folder: Folder, pond: Vector3)
+	local rng = Random.new(42)
+	local inner, outer = Config.ForestInnerRadius, Config.ForestOuterRadius
+
+	local function randomSpot()
+		local a = rng:NextNumber(0, math.pi * 2)
+		local r = rng:NextNumber(inner, outer)
+		return Vector3.new(math.cos(a) * r, 0, math.sin(a) * r)
+	end
+
+	local planted = 0
+	while planted < Config.TreeCount do
+		local p = randomSpot()
+		if (p - pond).Magnitude > 30 then
+			tree(folder, rng, p)
+			planted += 1
+		end
+	end
+
+	-- Scattered trees between the plots so the town feels tucked into the woods
+	for i = 1, Config.MaxPlots do
+		local a = (i - 0.5) / Config.MaxPlots * math.pi * 2
+		for _ = 1, 3 do
+			local r = Config.PlotRingRadius + rng:NextNumber(10, 45)
+			local jitter = rng:NextNumber(-0.03, 0.03)
+			tree(folder, rng, Vector3.new(math.cos(a + jitter) * r, 0, math.sin(a + jitter) * r))
+		end
+	end
+
+	for i = 1, 40 do
+		local p = randomSpot()
+		mushroom(folder, rng, p, i <= 14)
+	end
+	for _ = 1, 30 do
+		local p = randomSpot()
+		Ball(folder, rng:NextNumber(2, 6), CFrame.new(p) * CFrame.Angles(rng:NextNumber(0, 6), rng:NextNumber(0, 6), 0), rgb(120, 118, 125), M.Rock)
+	end
+	for i = 0, 11 do
+		local a = i / 12 * math.pi * 2
+		fireflies(folder, Vector3.new(math.cos(a), 0, math.sin(a)) * (inner + 30))
+	end
+end
+
+--------------------------------------------------------------------------------
+
+function WorldBuilder.Build()
+	setupLighting()
+
+	-- Clear the default Baseplate template pieces
+	for _, name in { "Baseplate", "SpawnLocation" } do
+		local old = workspace:FindFirstChild(name)
+		if old then
+			old:Destroy()
+		end
+	end
+	local oldTown = workspace:FindFirstChild("Town")
+	if oldTown then
+		oldTown:Destroy()
+	end
+
+	local pond = setupTerrain()
+
+	local town = Instance.new("Folder")
+	town.Name = "Town"
+	town.Parent = workspace
+
+	local scenery = Instance.new("Folder")
+	scenery.Name = "Scenery"
+	scenery.Parent = town
+	boundaryWalls(scenery)
+
+	local plaza = Instance.new("Folder")
+	plaza.Name = "Plaza"
+	plaza.Parent = town
+	local marketPrompts, wellPrompt, wellSparkles = buildPlaza(plaza)
+
+	local plotsFolder = Instance.new("Folder")
+	plotsFolder.Name = "Plots"
+	plotsFolder.Parent = town
+	local plots = {}
+	for i = 1, Config.MaxPlots do
+		plots[i] = buildPlot(plotsFolder, i)
+		buildPath(scenery, i)
+	end
+
+	local forest = Instance.new("Folder")
+	forest.Name = "Forest"
+	forest.Parent = scenery
+	buildForest(forest, pond)
+
+	return {
+		Plots = plots,
+		MarketPrompts = marketPrompts,
+		WellPrompt = wellPrompt,
+		WellSparkles = wellSparkles,
+	}
+end
+
+return WorldBuilder
+]]></string>
+        </Properties>
+      </Item>
+    </Item>
+  </Item>
+  <Item class="StarterPlayer" referent="14">
+    <Properties>
+      <string name="Name">StarterPlayer</string>
+    </Properties>
+    <Item class="StarterPlayerScripts" referent="15">
+      <Properties>
+        <string name="Name">StarterPlayerScripts</string>
+      </Properties>
+      <Item class="Folder" referent="16">
+        <Properties>
+          <string name="Name">Client</string>
+        </Properties>
+        <Item class="LocalScript" referent="17">
+          <Properties>
+            <string name="Name">ShopUI</string>
+            <string name="Source"><![CDATA[--[[
+	ShopUI (client)
+	  - Side menu: Home / Style / Visit / Town
+	  - Style picker with the 10 shop vibes
+	  - Visit menu listing every other player's shop
+	  - Toast notifications from the server
+	  - Shows owner-only prompts (Change Style) to the owner and
+	    visitor-only prompts (Leave a Sparkle) to everyone else
+]]
+
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local TweenService = game:GetService("TweenService")
+
+local HouseStyles = require(ReplicatedStorage.Shared.HouseStyles)
+
+local player = Players.LocalPlayer
+local remotes = ReplicatedStorage:WaitForChild("Remotes")
+local ChooseStyle = remotes:WaitForChild("ChooseStyle")
+local RequestTeleport = remotes:WaitForChild("RequestTeleport")
+local OpenStylePicker = remotes:WaitForChild("OpenStylePicker")
+local Notify = remotes:WaitForChild("Notify")
+
+local rgb = Color3.fromRGB
+local THEME = {
+	Panel = rgb(34, 24, 48),
+	Card = rgb(54, 38, 76),
+	CardHover = rgb(72, 52, 100),
+	Gold = rgb(255, 205, 110),
+	Text = rgb(245, 235, 255),
+	Muted = rgb(190, 175, 210),
+	Button = rgb(120, 70, 180),
+}
+
+--------------------------------------------------------------------------------
+-- Small UI helpers
+--------------------------------------------------------------------------------
+
+local function create(className: string, props: { [string]: any }, children: { Instance }?)
+	local instance = Instance.new(className)
+	for key, value in props do
+		if key ~= "Parent" then
+			instance[key] = value
+		end
+	end
+	for _, child in children or {} do
+		child.Parent = instance
+	end
+	instance.Parent = props.Parent
+	return instance
+end
+
+local function corner(radius: number)
+	return create("UICorner", { CornerRadius = UDim.new(0, radius) })
+end
+
+local function stroke(color: Color3, thickness: number)
+	return create("UIStroke", { Color = color, Thickness = thickness, ApplyStrokeMode = Enum.ApplyStrokeMode.Border })
+end
+
+local function label(props)
+	props.BackgroundTransparency = 1
+	props.TextColor3 = props.TextColor3 or THEME.Text
+	props.Font = props.Font or Enum.Font.GothamMedium
+	return create("TextLabel", props)
+end
+
+--------------------------------------------------------------------------------
+-- Root
+--------------------------------------------------------------------------------
+
+local gui = create("ScreenGui", {
+	Name = "PotionTownUI",
+	ResetOnSpawn = false,
+	ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
+	Parent = player:WaitForChild("PlayerGui"),
+})
+
+local uiScale = create("UIScale", { Parent = gui })
+local function rescale()
+	local camera = workspace.CurrentCamera
+	if camera then
+		uiScale.Scale = math.clamp(camera.ViewportSize.Y / 820, 0.6, 1.15)
+	end
+end
+rescale()
+workspace.CurrentCamera:GetPropertyChangedSignal("ViewportSize"):Connect(rescale)
+
+local function makePanel(name: string, title: string, maxSize: Vector2)
+	local panel = create("Frame", {
+		Name = name,
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		Position = UDim2.fromScale(0.5, 0.5),
+		Size = UDim2.fromScale(0.86, 0.82),
+		BackgroundColor3 = THEME.Panel,
+		BackgroundTransparency = 0.05,
+		Visible = false,
+		Parent = gui,
+	}, {
+		corner(18),
+		stroke(THEME.Gold, 2),
+		create("UISizeConstraint", { MaxSize = maxSize }),
+	})
+	local titleLabel = label({
+		Name = "Title",
+		Text = title,
+		Font = Enum.Font.FredokaOne,
+		TextScaled = true,
+		TextColor3 = THEME.Gold,
+		Position = UDim2.fromOffset(20, 12),
+		Size = UDim2.new(1, -80, 0, 38),
+		TextXAlignment = Enum.TextXAlignment.Left,
+		Parent = panel,
+	})
+	local close = create("TextButton", {
+		Name = "Close",
+		Text = "✕",
+		Font = Enum.Font.GothamBold,
+		TextSize = 22,
+		TextColor3 = THEME.Text,
+		AnchorPoint = Vector2.new(1, 0),
+		Position = UDim2.new(1, -12, 0, 12),
+		Size = UDim2.fromOffset(40, 40),
+		BackgroundColor3 = THEME.Card,
+		Parent = panel,
+	}, { corner(12) })
+	close.Activated:Connect(function()
+		panel.Visible = false
+	end)
+	return panel, titleLabel
+end
+
+--------------------------------------------------------------------------------
+-- Toasts
+--------------------------------------------------------------------------------
+
+local toast = label({
+	Name = "Toast",
+	AnchorPoint = Vector2.new(0.5, 1),
+	Position = UDim2.new(0.5, 0, 1, -110),
+	Size = UDim2.fromOffset(560, 50),
+	BackgroundTransparency = 0.15,
+	BackgroundColor3 = THEME.Panel,
+	TextWrapped = true,
+	TextSize = 18,
+	Font = Enum.Font.GothamBold,
+	Visible = false,
+	Parent = gui,
+})
+toast.BackgroundTransparency = 0.15
+corner(14).Parent = toast
+stroke(THEME.Gold, 1.5).Parent = toast
+create("UIPadding", { PaddingLeft = UDim.new(0, 14), PaddingRight = UDim.new(0, 14), Parent = toast })
+
+local toastToken = 0
+local function showToast(message: string)
+	toastToken += 1
+	local token = toastToken
+	toast.Text = message
+	toast.TextTransparency = 0
+	toast.BackgroundTransparency = 0.15
+	toast.Visible = true
+	task.delay(4, function()
+		if token ~= toastToken then
+			return
+		end
+		local fade = TweenInfo.new(0.6)
+		TweenService:Create(toast, fade, { TextTransparency = 1, BackgroundTransparency = 1 }):Play()
+		task.wait(0.6)
+		if token == toastToken then
+			toast.Visible = false
+		end
+	end)
+end
+Notify.OnClientEvent:Connect(showToast)
+
+--------------------------------------------------------------------------------
+-- Plot helpers (plots carry OwnerUserId / OwnerName / StyleId attributes)
+--------------------------------------------------------------------------------
+
+local function plotsFolder(): Instance?
+	local town = workspace:FindFirstChild("Town")
+	return town and town:FindFirstChild("Plots")
+end
+
+local function myStyleId(): string?
+	local folder = plotsFolder()
+	if not folder then
+		return nil
+	end
+	for _, plot in folder:GetChildren() do
+		if plot:GetAttribute("OwnerUserId") == player.UserId then
+			return plot:GetAttribute("StyleId")
+		end
+	end
+	return nil
+end
+
+--------------------------------------------------------------------------------
+-- Style picker
+--------------------------------------------------------------------------------
+
+local stylePanel, styleTitle = makePanel("StylePicker", "Choose your shop's vibe", Vector2.new(820, 600))
+local styleSubtitle = label({
+	Text = "Pick a look for your potion shop. You can change it any time from the 🎨 button or your shop sign.",
+	TextWrapped = true,
+	TextSize = 15,
+	TextColor3 = THEME.Muted,
+	TextXAlignment = Enum.TextXAlignment.Left,
+	Position = UDim2.fromOffset(20, 52),
+	Size = UDim2.new(1, -40, 0, 36),
+	Parent = stylePanel,
+})
+
+local grid = create("ScrollingFrame", {
+	Position = UDim2.fromOffset(16, 96),
+	Size = UDim2.new(1, -32, 1, -112),
+	BackgroundTransparency = 1,
+	BorderSizePixel = 0,
+	ScrollBarThickness = 6,
+	ScrollBarImageColor3 = THEME.Gold,
+	AutomaticCanvasSize = Enum.AutomaticSize.Y,
+	CanvasSize = UDim2.new(),
+	ScrollingDirection = Enum.ScrollingDirection.Y,
+	Parent = stylePanel,
+}, {
+	create("UIGridLayout", {
+		CellSize = UDim2.fromOffset(180, 196),
+		CellPadding = UDim2.fromOffset(12, 12),
+		HorizontalAlignment = Enum.HorizontalAlignment.Center,
+		SortOrder = Enum.SortOrder.LayoutOrder,
+	}),
+	create("UIPadding", { PaddingTop = UDim.new(0, 4), PaddingBottom = UDim.new(0, 8) }),
+})
+
+local cardStrokes: { [string]: UIStroke } = {}
+
+-- A tiny flat drawing of the house: roof band, walls, door, two windows.
+local function stylePreview(style, parent: Instance)
+	local preview = create("Frame", {
+		Size = UDim2.new(1, -16, 0, 96),
+		Position = UDim2.fromOffset(8, 8),
+		BackgroundColor3 = rgb(70, 95, 70),
+		ClipsDescendants = true,
+		Parent = parent,
+	}, { corner(10) })
+	create("Frame", { -- sky
+		Size = UDim2.fromScale(1, 0.78),
+		BackgroundColor3 = rgb(95, 70, 120),
+		BorderSizePixel = 0,
+		Parent = preview,
+	})
+	local house = create("Frame", {
+		AnchorPoint = Vector2.new(0.5, 1),
+		Position = UDim2.fromScale(0.5, 0.86),
+		Size = UDim2.fromScale(0.62, 0.5),
+		BackgroundColor3 = style.Wall.Color,
+		BorderSizePixel = 0,
+		Parent = preview,
+	})
+	create("Frame", { -- roof
+		AnchorPoint = Vector2.new(0.5, 1),
+		Position = UDim2.fromScale(0.5, 0.38),
+		Size = UDim2.fromScale(style.Roof.Type == "Dome" and 0.55 or 0.72, 0.3),
+		BackgroundColor3 = style.Roof.Color,
+		BorderSizePixel = 0,
+		Parent = preview,
+	}, style.Roof.Type == "Dome" and { corner(40) } or nil)
+	create("Frame", { -- door
+		AnchorPoint = Vector2.new(0.5, 1),
+		Position = UDim2.fromScale(0.5, 1),
+		Size = UDim2.fromScale(0.18, 0.62),
+		BackgroundColor3 = style.Door.Color,
+		BorderSizePixel = 0,
+		Parent = house,
+	}, { stroke(style.Trim.Color, 2) })
+	for _, x in { 0.2, 0.8 } do
+		create("Frame", { -- windows
+			AnchorPoint = Vector2.new(0.5, 0.5),
+			Position = UDim2.fromScale(x, 0.45),
+			Size = UDim2.fromScale(0.18, 0.32),
+			BackgroundColor3 = style.Window.Color,
+			BorderSizePixel = 0,
+			Parent = house,
+		}, { stroke(style.Trim.Color, 2) })
+	end
+	label({
+		Text = style.Emoji,
+		TextScaled = true,
+		AnchorPoint = Vector2.new(1, 0),
+		Position = UDim2.new(1, -4, 0, 4),
+		Size = UDim2.fromOffset(30, 30),
+		Parent = preview,
+	})
+end
+
+for _, style in HouseStyles.List do
+	local card = create("TextButton", {
+		Name = style.Id,
+		Text = "",
+		AutoButtonColor = false,
+		LayoutOrder = style.Order,
+		BackgroundColor3 = THEME.Card,
+		Parent = grid,
+	}, { corner(14) })
+	local cardStroke = stroke(THEME.Gold, 0)
+	cardStroke.Parent = card
+	cardStrokes[style.Id] = cardStroke
+
+	stylePreview(style, card)
+	label({
+		Text = style.DisplayName,
+		Font = Enum.Font.FredokaOne,
+		TextSize = 18,
+		TextColor3 = THEME.Text,
+		Position = UDim2.fromOffset(8, 108),
+		Size = UDim2.new(1, -16, 0, 22),
+		Parent = card,
+	})
+	label({
+		Text = style.Tagline,
+		TextSize = 13,
+		TextWrapped = true,
+		TextColor3 = THEME.Muted,
+		TextYAlignment = Enum.TextYAlignment.Top,
+		Position = UDim2.fromOffset(10, 132),
+		Size = UDim2.new(1, -20, 0, 58),
+		Parent = card,
+	})
+
+	card.MouseEnter:Connect(function()
+		card.BackgroundColor3 = THEME.CardHover
+	end)
+	card.MouseLeave:Connect(function()
+		card.BackgroundColor3 = THEME.Card
+	end)
+	card.Activated:Connect(function()
+		ChooseStyle:FireServer(style.Id)
+		stylePanel.Visible = false
+	end)
+end
+
+local function openStylePicker(firstVisit: boolean?)
+	styleTitle.Text = firstVisit and "Welcome to Potion Town! Pick your shop's vibe" or "Choose your shop's vibe"
+	styleSubtitle.Text = firstVisit
+			and "Every potion maker gets their own shop. Choose a look below. You can change it any time from the 🎨 button."
+		or "Pick a look for your potion shop. You can change it any time from the 🎨 button or your shop sign."
+	local current = myStyleId()
+	for id, cardStroke in cardStrokes do
+		cardStroke.Thickness = (id == current) and 3 or 0
+	end
+	stylePanel.Visible = true
+end
+OpenStylePicker.OnClientEvent:Connect(openStylePicker)
+
+--------------------------------------------------------------------------------
+-- Visit menu
+--------------------------------------------------------------------------------
+
+local visitPanel = makePanel("VisitMenu", "Visit a Shop", Vector2.new(460, 520))
+local list = create("ScrollingFrame", {
+	Position = UDim2.fromOffset(16, 62),
+	Size = UDim2.new(1, -32, 1, -78),
+	BackgroundTransparency = 1,
+	BorderSizePixel = 0,
+	ScrollBarThickness = 6,
+	ScrollBarImageColor3 = THEME.Gold,
+	AutomaticCanvasSize = Enum.AutomaticSize.Y,
+	CanvasSize = UDim2.new(),
+	Parent = visitPanel,
+}, {
+	create("UIListLayout", { Padding = UDim.new(0, 8), SortOrder = Enum.SortOrder.LayoutOrder }),
+})
+
+local function refreshVisitList()
+	for _, child in list:GetChildren() do
+		if child:IsA("Frame") or child:IsA("TextLabel") then
+			child:Destroy()
+		end
+	end
+	local folder = plotsFolder()
+	local count = 0
+	for _, plot in (folder and folder:GetChildren() or {}) do
+		local ownerId = plot:GetAttribute("OwnerUserId")
+		if ownerId and ownerId ~= player.UserId then
+			count += 1
+			local style = HouseStyles.Get(plot:GetAttribute("StyleId"))
+			local row = create("Frame", {
+				Size = UDim2.new(1, -8, 0, 64),
+				BackgroundColor3 = THEME.Card,
+				LayoutOrder = plot:GetAttribute("PlotIndex") or 0,
+				Parent = list,
+			}, { corner(12) })
+			label({
+				Text = string.format("%s  %s's Potion Shop", style and style.Emoji or "🧪", plot:GetAttribute("OwnerName") or "?"),
+				Font = Enum.Font.FredokaOne,
+				TextSize = 18,
+				TextXAlignment = Enum.TextXAlignment.Left,
+				TextTruncate = Enum.TextTruncate.AtEnd,
+				Position = UDim2.fromOffset(12, 8),
+				Size = UDim2.new(1, -120, 0, 24),
+				Parent = row,
+			})
+			label({
+				Text = style and style.DisplayName or "",
+				TextSize = 14,
+				TextColor3 = THEME.Muted,
+				TextXAlignment = Enum.TextXAlignment.Left,
+				Position = UDim2.fromOffset(12, 34),
+				Size = UDim2.new(1, -120, 0, 20),
+				Parent = row,
+			})
+			local visit = create("TextButton", {
+				Text = "Visit",
+				Font = Enum.Font.GothamBold,
+				TextSize = 16,
+				TextColor3 = THEME.Text,
+				BackgroundColor3 = THEME.Button,
+				AnchorPoint = Vector2.new(1, 0.5),
+				Position = UDim2.new(1, -10, 0.5, 0),
+				Size = UDim2.fromOffset(92, 40),
+				Parent = row,
+			}, { corner(10) })
+			visit.Activated:Connect(function()
+				RequestTeleport:FireServer(ownerId)
+				visitPanel.Visible = false
+			end)
+		end
+	end
+	if count == 0 then
+		label({
+			Text = "No other shops yet. Invite your friends to Potion Town! 🧪",
+			TextWrapped = true,
+			TextSize = 16,
+			TextColor3 = THEME.Muted,
+			Size = UDim2.new(1, -8, 0, 80),
+			Parent = list,
+		})
+	end
+end
+
+-- Keep the list fresh while it is open
+task.spawn(function()
+	local folder = workspace:WaitForChild("Town"):WaitForChild("Plots")
+	local function watch(plot: Instance)
+		plot.AttributeChanged:Connect(function()
+			if visitPanel.Visible then
+				refreshVisitList()
+			end
+		end)
+	end
+	for _, plot in folder:GetChildren() do
+		watch(plot)
+	end
+	folder.ChildAdded:Connect(watch)
+end)
+
+--------------------------------------------------------------------------------
+-- Side menu
+--------------------------------------------------------------------------------
+
+local menu = create("Frame", {
+	Name = "SideMenu",
+	AnchorPoint = Vector2.new(0, 0.5),
+	Position = UDim2.new(0, 14, 0.5, 0),
+	Size = UDim2.fromOffset(78, 0),
+	AutomaticSize = Enum.AutomaticSize.Y,
+	BackgroundTransparency = 1,
+	Parent = gui,
+}, {
+	create("UIListLayout", { Padding = UDim.new(0, 10), SortOrder = Enum.SortOrder.LayoutOrder }),
+})
+
+local function menuButton(order: number, emoji: string, text: string, onClick: () -> ())
+	local button = create("TextButton", {
+		Text = "",
+		LayoutOrder = order,
+		Size = UDim2.fromOffset(78, 78),
+		BackgroundColor3 = THEME.Panel,
+		BackgroundTransparency = 0.1,
+		AutoButtonColor = true,
+		Parent = menu,
+	}, { corner(16), stroke(THEME.Gold, 1.5) })
+	label({ Text = emoji, TextScaled = true, Position = UDim2.fromOffset(18, 8), Size = UDim2.fromOffset(42, 42), Parent = button })
+	label({ Text = text, Font = Enum.Font.GothamBold, TextSize = 14, Position = UDim2.fromOffset(0, 52), Size = UDim2.new(1, 0, 0, 18), Parent = button })
+	button.Activated:Connect(onClick)
+	return button
+end
+
+menuButton(1, "🏠", "Home", function()
+	RequestTeleport:FireServer("Home")
+end)
+menuButton(2, "🎨", "Style", function()
+	visitPanel.Visible = false
+	if stylePanel.Visible then
+		stylePanel.Visible = false
+	else
+		openStylePicker(false)
+	end
+end)
+menuButton(3, "🧭", "Visit", function()
+	stylePanel.Visible = false
+	visitPanel.Visible = not visitPanel.Visible
+	if visitPanel.Visible then
+		refreshVisitList()
+	end
+end)
+menuButton(4, "⛲", "Town", function()
+	RequestTeleport:FireServer("Town")
+end)
+
+--------------------------------------------------------------------------------
+-- Owner-only / visitor-only prompts
+--------------------------------------------------------------------------------
+
+local function applyAudience(prompt: ProximityPrompt)
+	local audience = prompt:GetAttribute("Audience")
+	if not audience then
+		return
+	end
+	local isOwner = prompt:GetAttribute("OwnerUserId") == player.UserId
+	if audience == "Owner" then
+		prompt.Enabled = isOwner
+	elseif audience == "Visitor" then
+		prompt.Enabled = not isOwner
+	end
+end
+
+local function trackPrompt(instance: Instance)
+	if instance:IsA("ProximityPrompt") and instance:GetAttribute("Audience") then
+		applyAudience(instance)
+		instance:GetAttributeChangedSignal("OwnerUserId"):Connect(function()
+			applyAudience(instance)
+		end)
+	end
+end
+
+for _, descendant in workspace:GetDescendants() do
+	trackPrompt(descendant)
+end
+workspace.DescendantAdded:Connect(trackPrompt)
+]]></string>
+          </Properties>
+        </Item>
+      </Item>
+    </Item>
+  </Item>
+</roblox>
